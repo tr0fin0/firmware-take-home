@@ -192,6 +192,18 @@ static payload_error_t payload_decode_flow(
     return PAYLOAD_NO_ERROR;
 }
 
+static payload_error_t payload_decode_sequence(
+    payload_t *payload, uint8_t  bytes[PAYLOAD_SIZE_BYTES]
+) {
+    payload_sequence_t sequence = 0;
+
+    sequence |= (payload_sequence_t)((bytes[9]  & 0xE0) >> 5);
+    sequence |= (payload_sequence_t)((bytes[10] & 0x1F) << 3);
+
+    payload->sequence = sequence;
+    return PAYLOAD_NO_ERROR;
+}
+
 payload_error_t payload_decode(
     payload_t *payload, uint8_t  bytes[PAYLOAD_SIZE_BYTES]
 ) {
@@ -228,6 +240,11 @@ payload_error_t payload_decode(
     }
 
     error = payload_decode_flow(payload, bytes);
+    if (error != PAYLOAD_NO_ERROR) {
+        return error;
+    }
+
+    error = payload_decode_sequence(payload, bytes);
     if (error != PAYLOAD_NO_ERROR) {
         return error;
     }
