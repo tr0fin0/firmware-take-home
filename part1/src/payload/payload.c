@@ -142,6 +142,56 @@ static payload_error_t payload_decode_temperature(
     return PAYLOAD_NO_ERROR;
 }
 
+static const float flow_exponents[] = {
+    0.125f,  // 2^-3
+    0.25f,   // 2^-2
+    0.5f,    // 2^-1
+    1.0f,    // 2^0
+    2.0f,    // 2^1
+    4.0f,    // 2^2
+    8.0f,    // 2^3
+    16.0f,   // 2^4
+    32.0f,   // 2^5
+    64.0f,   // 2^6
+    128.0f,  // 2^7
+    256.0f,  // 2^8
+    512.0f,  // 2^9
+    1024.0f  // 2^10
+};
+
+static payload_error_t payload_decode_flow(
+    payload_t *payload, uint8_t  bytes[PAYLOAD_SIZE_BYTES]
+) {
+    uint16_t flow_config = 0;
+
+    flow_config |= (uint16_t) ((bytes[8] & 0xFE) >> 1);
+    flow_config |= (uint16_t) ((bytes[9] & 0x1F) << 7);
+
+    uint8_t mantissa = (uint8_t) (flow_config & 0x00FF);
+    uint8_t exponent = (uint8_t) ((flow_config & 0x0F00) >> 8);
+
+    printf("0x%02d\n", exponent);
+    printf("0x%02d\n", mantissa);
+
+    if (exponent == 0x0F) {
+        return PAYLOAD_ERROR_FLOW_EXPONENT_INVALID;
+    }
+
+    payload_flow_lph_t flow_lph = 0;
+    if (exponent == 0x00) {
+        flow_lph = (payload_flow_lph_t) (
+            ((float) mantissa) / (1024.0f)
+        );
+    } else {
+        flow_lph = (payload_flow_lph_t) (
+            (1.0f + ((float) mantissa / 256.0f)) * (flow_exponents[exponent])
+        );
+    }
+
+    payload->flow_lph = flow_lph;
+    return PAYLOAD_NO_ERROR;
+}
+
 payload_error_t payload_decode(
     payload_t *payload, uint8_t  bytes[PAYLOAD_SIZE_BYTES]
 ) {
@@ -173,6 +223,11 @@ payload_error_t payload_decode(
     }
 
     error = payload_decode_temperature(payload, bytes);
+    if (error != PAYLOAD_NO_ERROR) {
+        return error;
+    }
+
+    error = payload_decode_flow(payload, bytes);
     if (error != PAYLOAD_NO_ERROR) {
         return error;
     }
