@@ -84,3 +84,12 @@ payload_error_t payload_decode(
 payload_error_t payload_encode(
     payload_t  payload, uint8_t *bytes[PAYLOAD_SIZE_BYTES]
 );
+
+/**
+ * @brief Prints the contents of a payload.
+ *
+ * @param[in] payload Pointer to the payload to print.
+ *
+ * @note If payload is NULL, nothing is printed.
+ */
+void payload_print(payload_t *payload);
