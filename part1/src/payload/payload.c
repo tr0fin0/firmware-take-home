@@ -1,5 +1,6 @@
 #include <inttypes.h>
 #include "payload.h"
+#include "payload_constants.h"
 #include <stdio.h>
 
 static const char *payload_error_messages[NUMBER_OF_PAYLOAD_ERRORS] = {
@@ -96,6 +97,26 @@ static payload_error_t payload_decode_pulse_count(
     return PAYLOAD_NO_ERROR;
 }
 
+static payload_error_t payload_decode_battery(
+    payload_t *payload, uint8_t  bytes[PAYLOAD_SIZE_BYTES]
+) {
+    payload_battery_mv_t battery_mv = 0;
+
+    battery_mv |= (payload_battery_mv_t)((bytes[5] & 0xFC) >> 2);
+    battery_mv |= (payload_battery_mv_t)((bytes[6] & 0x3F) << 6);
+
+    if (battery_mv > PAYLOAD_BATTERY_MAXIMUM_MV) {
+        return PAYLOAD_ERROR_BATTERY_ABOVE_MAXIMAL;
+    }
+
+    if (battery_mv < PAYLOAD_BATTERY_MINIMUM_MV) {
+        return PAYLOAD_ERROR_BATTERY_BELOW_MINIMAL;
+    }
+
+    payload->battery_mv = battery_mv;
+    return PAYLOAD_NO_ERROR;
+}
+
 payload_error_t payload_decode(
     payload_t *payload, uint8_t  bytes[PAYLOAD_SIZE_BYTES]
 ) {
@@ -117,6 +138,11 @@ payload_error_t payload_decode(
     }
 
     error = payload_decode_pulse_count(payload, bytes);
+    if (error != PAYLOAD_NO_ERROR) {
+        return error;
+    }
+
+    error = payload_decode_battery(payload, bytes);
     if (error != PAYLOAD_NO_ERROR) {
         return error;
     }
