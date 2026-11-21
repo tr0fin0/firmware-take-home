@@ -170,9 +170,6 @@ static payload_error_t payload_decode_flow(
     uint8_t mantissa = (uint8_t) (flow_config & 0x00FF);
     uint8_t exponent = (uint8_t) ((flow_config & 0x0F00) >> 8);
 
-    printf("0x%02d\n", exponent);
-    printf("0x%02d\n", mantissa);
-
     if (exponent == 0x0F) {
         return PAYLOAD_ERROR_FLOW_EXPONENT_INVALID;
     }
