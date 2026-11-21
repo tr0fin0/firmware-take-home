@@ -117,6 +117,31 @@ static payload_error_t payload_decode_battery(
     return PAYLOAD_NO_ERROR;
 }
 
+static payload_error_t payload_decode_temperature(
+    payload_t *payload, uint8_t  bytes[PAYLOAD_SIZE_BYTES]
+) {
+    payload_temperature_dc_t temperature_dc = 0;
+
+    temperature_dc |= (payload_temperature_dc_t)((bytes[6] & 0xC0) >> 6);
+    temperature_dc |= (payload_temperature_dc_t)((bytes[7] & 0xFF) << 2);
+
+    bool temperature_negative = (bool) ((bytes[8] & 0x01) == 1);
+    if (temperature_negative) {
+        temperature_dc -= (1 << 10);
+    }
+
+    if (temperature_dc > PAYLOAD_TEMPERATURE_MAXIMUM_DC) {
+        return PAYLOAD_ERROR_TEMPERATURE_ABOVE_MAXIMAL;
+    }
+
+    if (temperature_dc < PAYLOAD_TEMPERATURE_MINIMUM_DC) {
+        return PAYLOAD_ERROR_TEMPERATURE_BELOW_MINIMAL;
+    }
+
+    payload->temperature_dc = temperature_dc;
+    return PAYLOAD_NO_ERROR;
+}
+
 payload_error_t payload_decode(
     payload_t *payload, uint8_t  bytes[PAYLOAD_SIZE_BYTES]
 ) {
@@ -143,6 +168,11 @@ payload_error_t payload_decode(
     }
 
     error = payload_decode_battery(payload, bytes);
+    if (error != PAYLOAD_NO_ERROR) {
+        return error;
+    }
+
+    error = payload_decode_temperature(payload, bytes);
     if (error != PAYLOAD_NO_ERROR) {
         return error;
     }
