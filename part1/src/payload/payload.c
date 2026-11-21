@@ -204,6 +204,22 @@ static payload_error_t payload_decode_sequence(
     return PAYLOAD_NO_ERROR;
 }
 
+static payload_error_t payload_decode_reserved(
+    payload_t *payload, uint8_t  bytes[PAYLOAD_SIZE_BYTES]
+) {
+    payload_reserved_t reserved = 0;
+
+    reserved |= (payload_reserved_t)((bytes[10] & 0xE0) >> 5);
+
+    if (reserved != PAYLOAD_RESERVED_EXPECTED) {
+        return PAYLOAD_ERROR_RESERVED_INVALID;
+    }
+
+    payload->reserved = reserved;
+    return PAYLOAD_NO_ERROR;
+}
+
+
 payload_error_t payload_decode(
     payload_t *payload, uint8_t  bytes[PAYLOAD_SIZE_BYTES]
 ) {
@@ -245,6 +261,11 @@ payload_error_t payload_decode(
     }
 
     error = payload_decode_sequence(payload, bytes);
+    if (error != PAYLOAD_NO_ERROR) {
+        return error;
+    }
+
+    error = payload_decode_reserved(payload, bytes);
     if (error != PAYLOAD_NO_ERROR) {
         return error;
     }

@@ -21,6 +21,11 @@
 #define PAYLOAD_BATTERY_MINIMUM_MV ((payload_battery_mv_t) 1800)
 
 /**
+ * @brief Accepted reserved bit values.
+ */
+#define PAYLOAD_RESERVED_EXPECTED ((payload_reserved_t) 0)
+
+/**
  * @brief Maximum accepted temperature in deci-celsius.
  */
 #define PAYLOAD_TEMPERATURE_MAXIMUM_DC ((payload_temperature_dc_t) +850)
