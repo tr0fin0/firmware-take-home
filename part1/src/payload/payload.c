@@ -1,3 +1,4 @@
+#include "crc8.h"
 #include <inttypes.h>
 #include "payload.h"
 #include "payload_constants.h"
@@ -216,6 +217,28 @@ static payload_error_t payload_decode_reserved(
     return PAYLOAD_NO_ERROR;
 }
 
+static payload_error_t payload_decode_crc8(
+    payload_t *payload, uint8_t  bytes[PAYLOAD_SIZE_BYTES]
+) {
+    crc8_config_t crc8_config = {
+        .init_value     = 0x00,
+        .polynomial     = 0x07,
+        .reflection_in  = false,
+        .reflection_out = false,
+        .xor_out        = 0x00
+    };
+
+    crc8_value_t crc8_value = crc8_compute(
+        crc8_config, bytes, PAYLOAD_SIZE_BYTES - 1
+    );
+
+    if (crc8_value != (crc8_value_t) bytes[PAYLOAD_SIZE_BYTES - 1]) {
+        return PAYLOAD_ERROR_CRC8_CHECK_FAIL;
+    }
+
+    payload->crc8_value = crc8_value;
+    return PAYLOAD_NO_ERROR;
+}
 
 payload_error_t payload_decode(
     payload_t *payload, uint8_t  bytes[PAYLOAD_SIZE_BYTES]
@@ -263,6 +286,11 @@ payload_error_t payload_decode(
     }
 
     error = payload_decode_reserved(payload, bytes);
+    if (error != PAYLOAD_NO_ERROR) {
+        return error;
+    }
+
+    error = payload_decode_crc8(payload, bytes);
     if (error != PAYLOAD_NO_ERROR) {
         return error;
     }
