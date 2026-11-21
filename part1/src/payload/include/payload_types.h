@@ -68,6 +68,11 @@ typedef enum payload_error {
      * @brief
      */
     PAYLOAD_ERROR_VERSION_INVALID,
+
+    /**
+     * @brief Number of payload erros.
+     */
+    NUMBER_OF_PAYLOAD_ERRORS
 } payload_error_t;
 
 /**

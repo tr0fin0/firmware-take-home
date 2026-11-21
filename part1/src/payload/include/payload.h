@@ -93,3 +93,12 @@ payload_error_t payload_encode(
  * @note If payload is NULL, nothing is printed.
  */
 void payload_print(payload_t *payload);
+
+/**
+ * @brief Prints the message corresponding to a payload error.
+ *
+ * @param[in] error Payload error code.
+ *
+ * @note If the error code is undefined, nothing is printed.
+ */
+void payload_print_error(payload_error_t error);

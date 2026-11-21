@@ -2,6 +2,41 @@
 #include "payload.h"
 #include <stdio.h>
 
+static const char *payload_error_messages[NUMBER_OF_PAYLOAD_ERRORS] = {
+    [PAYLOAD_NO_ERROR]
+        = "payload without errors",
+
+    [PAYLOAD_ERROR_BATTERY_ABOVE_MAXIMAL]
+        = "payload with battery above maximal",
+
+    [PAYLOAD_ERROR_BATTERY_BELOW_MINIMAL]
+        = "payload with battery below minimal",
+
+    [PAYLOAD_ERROR_CRC8_CHECK_FAIL]
+        = "payload with CRC8 check failure",
+
+    [PAYLOAD_ERROR_DEVICE_TYPE_INVALID]
+        = "payload with invalid device type",
+
+    [PAYLOAD_ERROR_FLAG_INVALID]
+        = "payload with invalid flag",
+
+    [PAYLOAD_ERROR_FLOW_EXPONENT_INVALID]
+        = "payload with invalid flow exponent",
+
+    [PAYLOAD_ERROR_RESERVED_INVALID]
+        = "payload with invalid reserved bits",
+
+    [PAYLOAD_ERROR_TEMPERATURE_ABOVE_MAXIMAL]
+        = "payload with temperature above maximal",
+
+    [PAYLOAD_ERROR_TEMPERATURE_BELOW_MINIMAL]
+        = "payload with temperature below minimal",
+
+    [PAYLOAD_ERROR_VERSION_INVALID]
+        = "payload with invalid version",
+};
+
 payload_error_t payload_decode(
     payload_t *payload, uint8_t  bytes[PAYLOAD_SIZE_BYTES]
 ) {
@@ -49,3 +84,12 @@ void payload_print(payload_t *payload) {
         (crc8_value_t)              payload->crc8_check
     );
 }
+
+void payload_print_error(payload_error_t error) {
+    if ((unsigned) error >= NUMBER_OF_PAYLOAD_ERRORS) {
+        return;
+    }
+
+    printf("%s\n", payload_error_messages[error]);
+}
+
