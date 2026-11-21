@@ -37,9 +37,28 @@ static const char *payload_error_messages[NUMBER_OF_PAYLOAD_ERRORS] = {
         = "payload with invalid version",
 };
 
+static payload_error_t payload_decode_version(
+    payload_t *payload, uint8_t  bytes[PAYLOAD_SIZE_BYTES]
+) {
+    payload_version_t version = (payload_version_t) (bytes[0] & 0x0F);
+
+    if (version != PAYLOAD_VERSION_1) {
+        return PAYLOAD_ERROR_VERSION_INVALID;
+    }
+
+    payload->version = version;
+    return PAYLOAD_NO_ERROR;
+}
+
 payload_error_t payload_decode(
     payload_t *payload, uint8_t  bytes[PAYLOAD_SIZE_BYTES]
 ) {
+    payload_error_t error;
+
+    error = payload_decode_version(payload, bytes);
+    if (error != PAYLOAD_NO_ERROR) {
+        return error;
+    }
 
     return PAYLOAD_NO_ERROR;
 }
