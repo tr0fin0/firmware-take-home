@@ -81,6 +81,21 @@ static payload_error_t payload_decode_flags(
     return PAYLOAD_NO_ERROR;
 }
 
+static payload_error_t payload_decode_pulse_count(
+    payload_t *payload, uint8_t  bytes[PAYLOAD_SIZE_BYTES]
+) {
+    payload_pulse_count_t pulse_count = 0;
+
+    pulse_count |= (payload_pulse_count_t) ((bytes[1] & 0x80) >>  7);
+    pulse_count |= (payload_pulse_count_t) ((bytes[2] & 0xFF) <<  1);
+    pulse_count |= (payload_pulse_count_t) ((bytes[3] & 0xFF) <<  9);
+    pulse_count |= (payload_pulse_count_t) ((bytes[4] & 0xFF) << 17);
+    pulse_count |= (payload_pulse_count_t) ((bytes[5] & 0x07) << 25);
+
+    payload->pulse_count = pulse_count;
+    return PAYLOAD_NO_ERROR;
+}
+
 payload_error_t payload_decode(
     payload_t *payload, uint8_t  bytes[PAYLOAD_SIZE_BYTES]
 ) {
@@ -97,6 +112,11 @@ payload_error_t payload_decode(
     }
 
     error = payload_decode_flags(payload, bytes);
+    if (error != PAYLOAD_NO_ERROR) {
+        return error;
+    }
+
+    error = payload_decode_pulse_count(payload, bytes);
     if (error != PAYLOAD_NO_ERROR) {
         return error;
     }
