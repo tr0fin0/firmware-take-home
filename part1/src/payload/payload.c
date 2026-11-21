@@ -50,12 +50,33 @@ static payload_error_t payload_decode_version(
     return PAYLOAD_NO_ERROR;
 }
 
+static payload_error_t payload_decode_device_type(
+    payload_t *payload, uint8_t  bytes[PAYLOAD_SIZE_BYTES]
+) {
+    payload_device_type_t device_type = 0;
+
+    device_type |= (payload_device_type_t) ((bytes[0] & 0xF0) >> 4);
+    device_type |= (payload_device_type_t) ((bytes[1] & 0x0F) << 4);
+
+    if (device_type != PAYLOAD_DEVICE_TYPE_1) {
+        return PAYLOAD_ERROR_DEVICE_TYPE_INVALID;
+    }
+
+    payload->device_type = device_type;
+    return PAYLOAD_NO_ERROR;
+}
+
 payload_error_t payload_decode(
     payload_t *payload, uint8_t  bytes[PAYLOAD_SIZE_BYTES]
 ) {
     payload_error_t error;
 
     error = payload_decode_version(payload, bytes);
+    if (error != PAYLOAD_NO_ERROR) {
+        return error;
+    }
+
+    error = payload_decode_device_type(payload, bytes);
     if (error != PAYLOAD_NO_ERROR) {
         return error;
     }
