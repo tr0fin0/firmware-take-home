@@ -66,6 +66,21 @@ static payload_error_t payload_decode_device_type(
     return PAYLOAD_NO_ERROR;
 }
 
+static payload_error_t payload_decode_flags(
+    payload_t *payload, uint8_t  bytes[PAYLOAD_SIZE_BYTES]
+) {
+    payload_flags_t decoded_flags = {0};
+
+    decoded_flags.battery_low   = (bool) (((bytes[1] & 0x10) >> 4) == 1);
+    decoded_flags.violation     = (bool) (((bytes[1] & 0x20) >> 5) == 1);
+    decoded_flags.flow_reversed = (bool) (((bytes[1] & 0x40) >> 6) == 1);
+
+    payload->flags.battery_low      = decoded_flags.battery_low;
+    payload->flags.violation        = decoded_flags.violation;
+    payload->flags.flow_reversed    = decoded_flags.flow_reversed;
+    return PAYLOAD_NO_ERROR;
+}
+
 payload_error_t payload_decode(
     payload_t *payload, uint8_t  bytes[PAYLOAD_SIZE_BYTES]
 ) {
@@ -77,6 +92,11 @@ payload_error_t payload_decode(
     }
 
     error = payload_decode_device_type(payload, bytes);
+    if (error != PAYLOAD_NO_ERROR) {
+        return error;
+    }
+
+    error = payload_decode_flags(payload, bytes);
     if (error != PAYLOAD_NO_ERROR) {
         return error;
     }
