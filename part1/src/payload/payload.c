@@ -81,7 +81,7 @@ void payload_print(payload_t *payload) {
         (payload_flow_lph_t)        payload->flow_lph,
         (payload_sequence_t)        payload->sequence,
         (payload_reserved_t)        payload->reserved,
-        (crc8_value_t)              payload->crc8_check
+        (crc8_value_t)              payload->crc8_value
     );
 }
 
