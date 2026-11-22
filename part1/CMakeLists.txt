@@ -10,11 +10,13 @@ add_executable(part1
     src/main.c
     src/crc8/crc8.c
     src/payload/payload.c
+    src/test/test.c
 )
 
 target_include_directories(part1 PRIVATE
     src/crc8/include
     src/payload/include
+    src/test/include
 )
 
 target_compile_options(part1 PRIVATE
