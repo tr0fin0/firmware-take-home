@@ -1,5 +1,6 @@
 #include <assert.h>
 #include "payload.h"
+#include "payload_constants.h"
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
@@ -20,6 +21,14 @@ static void decode_assert_error(
     payload_error_t error = payload_decode(&payload, bytes);
 
     assert(error == expected_error);
+}
+
+static void set_battery_mv(
+    uint8_t bytes[PAYLOAD_SIZE_BYTES],
+    payload_battery_mv_t battery_mv
+) {
+    bytes[5] = (uint8_t) ((bytes[5] & 0x03) | ((battery_mv & 0x003F) << 2));
+    bytes[6] = (uint8_t) ((bytes[6] & 0xC0) | ((battery_mv >> 6) & 0x003F));
 }
 
 static void update_crc8(uint8_t bytes[PAYLOAD_SIZE_BYTES]) {
@@ -69,6 +78,22 @@ void test_decode_encode(void) {
     }
 }
 
+void test_error_decode_battery_above_maximal(void) {
+    uint8_t bytes[PAYLOAD_SIZE_BYTES];
+    copy_bytes_example(bytes);
+
+    set_battery_mv(
+        bytes,
+        (payload_battery_mv_t) (PAYLOAD_BATTERY_MAXIMUM_MV + 1U)
+    );
+
+    update_crc8(bytes);
+
+    decode_assert_error(bytes, PAYLOAD_ERROR_BATTERY_ABOVE_MAXIMAL);
+
+    printf("%s(): success\n", __func__);
+}
+
 void test_error_decode_crc8(void) {
     uint8_t bytes[PAYLOAD_SIZE_BYTES];
     copy_bytes_example(bytes);
@@ -112,6 +137,7 @@ int main(void) {
     test_error_decode_crc8();
     test_error_decode_version();
     test_error_decode_device_type();
+    test_error_decode_battery_above_maximal();
 
     return 0;
 }
