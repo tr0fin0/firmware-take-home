@@ -13,6 +13,16 @@ static void copy_bytes_example(uint8_t bytes[PAYLOAD_SIZE_BYTES]) {
     memcpy(bytes, bytes_example, PAYLOAD_SIZE_BYTES);
 }
 
+static payload_t copy_payload_example(void) {
+    uint8_t bytes[PAYLOAD_SIZE_BYTES];
+    copy_bytes_example(bytes);
+
+    payload_t payload = {0};
+    assert(payload_decode(&payload, bytes) == PAYLOAD_NO_ERROR);
+
+    return payload;
+}
+
 static void decode_assert_error(
     uint8_t bytes[PAYLOAD_SIZE_BYTES],
     payload_error_t expected_error
@@ -238,6 +248,28 @@ void test_error_decode_version(void) {
     printf("[success] %s()\n", __func__);
 }
 
+void test_flags_combinations(void) {
+    payload_t payload = copy_payload_example();
+
+    for (uint8_t flags = 0; flags < 8; flags++) {
+        payload.flags.battery_low   = (bool) ((flags >> 0) & 0x01);
+        payload.flags.violation     = (bool) ((flags >> 1) & 0x01);
+        payload.flags.flow_reversed = (bool) ((flags >> 2) & 0x01);
+
+        uint8_t bytes[PAYLOAD_SIZE_BYTES] = {0};
+        assert(payload_encode(payload, bytes) == PAYLOAD_NO_ERROR);
+
+        payload_t payload_d = {0};
+        assert(payload_decode(&payload_d, bytes) == PAYLOAD_NO_ERROR);
+
+        assert(payload_d.flags.battery_low    == payload.flags.battery_low);
+        assert(payload_d.flags.violation      == payload.flags.violation);
+        assert(payload_d.flags.flow_reversed  == payload.flags.flow_reversed);
+    }
+
+    printf("[success] %s()\n", __func__);
+}
+
 int main(void) {
     test_decode_encode();
 
@@ -250,6 +282,8 @@ int main(void) {
     test_error_decode_temperature_below_minimal();
     test_error_decode_flow_exponent_invalid();
     test_error_decode_reserved();
+
+    test_flags_combinations();
 
     return 0;
 }
