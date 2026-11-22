@@ -254,6 +254,16 @@ static payload_error_t payload_encode_device_type(
 
     return PAYLOAD_NO_ERROR;
 }
+
+static payload_error_t payload_encode_flags(
+    payload_t payload, uint8_t bytes[PAYLOAD_SIZE_BYTES]
+) {
+    bytes[1] |= (uint8_t) ((payload.flags.battery_low   ? 1U : 0U) << 4);
+    bytes[1] |= (uint8_t) ((payload.flags.violation     ? 1U : 0U) << 5);
+    bytes[1] |= (uint8_t) ((payload.flags.flow_reversed ? 1U : 0U) << 6);
+
+    return PAYLOAD_NO_ERROR;
+}
 static payload_error_t payload_encode_version(
     payload_t payload, uint8_t bytes[PAYLOAD_SIZE_BYTES]
 ) {
@@ -337,6 +347,11 @@ payload_error_t payload_encode(
     }
 
     error = payload_encode_device_type(payload, bytes);
+    if (error != PAYLOAD_NO_ERROR) {
+        return error;
+    }
+
+    error = payload_encode_flags(payload, bytes);
     if (error != PAYLOAD_NO_ERROR) {
         return error;
     }
