@@ -110,7 +110,7 @@ payload_error_t payload_decode(
  * @note The output array must have space for PAYLOAD_SIZE_BYTES bytes.
  */
 payload_error_t payload_encode(
-    payload_t payload, uint8_t *bytes[PAYLOAD_SIZE_BYTES]
+    payload_t payload, uint8_t bytes[PAYLOAD_SIZE_BYTES]
 );
 
 /**
