@@ -369,6 +369,16 @@ static payload_error_t payload_encode_pulse_count(
     return PAYLOAD_NO_ERROR;
 }
 
+static payload_error_t payload_encode_sequence(
+    payload_t payload, uint8_t bytes[PAYLOAD_SIZE_BYTES]
+) {
+    payload_sequence_t sequence = payload.sequence;
+
+    bytes[9]  |= (uint8_t) ((sequence & 0x07) << 5);
+    bytes[10] |= (uint8_t) ((sequence >> 3) & 0x1F);
+
+    return PAYLOAD_NO_ERROR;
+}
 
 static payload_error_t payload_encode_temperature(
     payload_t payload, uint8_t bytes[PAYLOAD_SIZE_BYTES]
@@ -508,6 +518,12 @@ payload_error_t payload_encode(
     if (error != PAYLOAD_NO_ERROR) {
         return error;
     }
+
+    error = payload_encode_sequence(payload, bytes);
+    if (error != PAYLOAD_NO_ERROR) {
+        return error;
+    }
+
 
     return PAYLOAD_NO_ERROR;
 }
