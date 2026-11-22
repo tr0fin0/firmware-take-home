@@ -33,6 +33,16 @@ static void decode_assert_error(
     assert(error == expected_error);
 }
 
+static void encode_assert_error(
+    payload_t payload,
+    payload_error_t expected_error
+) {
+    uint8_t bytes[PAYLOAD_SIZE_BYTES] = {0};
+    payload_error_t error = payload_encode(payload, bytes);
+
+    assert(error == expected_error);
+}
+
 static void set_battery_mv(
     uint8_t bytes[PAYLOAD_SIZE_BYTES],
     payload_battery_mv_t battery_mv
@@ -248,6 +258,16 @@ void test_error_decode_version(void) {
     printf("[success] %s()\n", __func__);
 }
 
+void test_error_encode_version(void) {
+    payload_t payload = copy_payload_example();
+
+    payload.version = (payload_version_t) (payload.version ^ 0x01);
+
+    encode_assert_error(payload, PAYLOAD_ERROR_VERSION_INVALID);
+
+    printf("[success] %s()\n", __func__);
+}
+
 void test_flags_combinations(void) {
     payload_t payload = copy_payload_example();
 
@@ -275,6 +295,7 @@ int main(void) {
 
     test_error_decode_crc8();
     test_error_decode_version();
+    test_error_encode_version();
     test_error_decode_device_type();
     test_error_decode_battery_above_maximal();
     test_error_decode_battery_below_minimal();
