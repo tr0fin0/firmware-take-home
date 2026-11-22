@@ -292,6 +292,17 @@ void test_error_encode_device_type(void) {
     printf("[success] %s()\n", __func__);
 }
 
+void test_error_encode_flow_exponent_invalid(void) {
+    payload_t payload = copy_payload_example();
+
+    // 1024 * (1 + 255 / 256) = 2044 L/h
+    payload.flow_lph = 2048.0f;
+
+    encode_assert_error(payload, PAYLOAD_ERROR_FLOW_EXPONENT_INVALID);
+
+    printf("[success] %s()\n", __func__);
+}
+
 void test_error_encode_temperature_above_maximal(void) {
     payload_t payload = copy_payload_example();
 
@@ -365,6 +376,7 @@ int main(void) {
     test_error_decode_temperature_below_minimal();
     test_error_encode_temperature_below_minimal();
     test_error_decode_flow_exponent_invalid();
+    test_error_encode_flow_exponent_invalid();
     test_error_decode_reserved();
 
     test_flags_combinations();
