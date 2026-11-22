@@ -369,6 +369,20 @@ static payload_error_t payload_encode_pulse_count(
     return PAYLOAD_NO_ERROR;
 }
 
+static payload_error_t payload_encode_reserved(
+    payload_t payload, uint8_t bytes[PAYLOAD_SIZE_BYTES]
+) {
+    payload_reserved_t reserved = payload.reserved;
+
+    if (reserved != PAYLOAD_RESERVED_EXPECTED) {
+        return PAYLOAD_ERROR_RESERVED_INVALID;
+    }
+
+    bytes[10] |= (uint8_t) ((reserved & 0x07) << 5);
+
+    return PAYLOAD_NO_ERROR;
+}
+
 static payload_error_t payload_encode_sequence(
     payload_t payload, uint8_t bytes[PAYLOAD_SIZE_BYTES]
 ) {
@@ -524,6 +538,10 @@ payload_error_t payload_encode(
         return error;
     }
 
+    error = payload_encode_reserved(payload, bytes);
+    if (error != PAYLOAD_NO_ERROR) {
+        return error;
+    }
 
     return PAYLOAD_NO_ERROR;
 }
