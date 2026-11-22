@@ -304,6 +304,18 @@ void test_error_encode_temperature_above_maximal(void) {
     printf("[success] %s()\n", __func__);
 }
 
+void test_error_encode_temperature_below_minimal(void) {
+    payload_t payload = copy_payload_example();
+
+    payload.temperature_dc = (
+        (payload_temperature_dc_t) (PAYLOAD_TEMPERATURE_MINIMUM_DC - 1)
+    );
+
+    encode_assert_error(payload, PAYLOAD_ERROR_TEMPERATURE_BELOW_MINIMAL);
+
+    printf("[success] %s()\n", __func__);
+}
+
 void test_error_encode_version(void) {
     payload_t payload = copy_payload_example();
 
@@ -351,6 +363,7 @@ int main(void) {
     test_error_decode_temperature_above_maximal();
     test_error_encode_temperature_above_maximal();
     test_error_decode_temperature_below_minimal();
+    test_error_encode_temperature_below_minimal();
     test_error_decode_flow_exponent_invalid();
     test_error_decode_reserved();
 
