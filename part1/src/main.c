@@ -36,30 +36,6 @@ static void update_crc8(uint8_t bytes[PAYLOAD_SIZE_BYTES]) {
     );
 }
 
-void test_error_decode_crc8(void) {
-    uint8_t bytes[PAYLOAD_SIZE_BYTES];
-    copy_bytes_example(bytes);
-
-    bytes[PAYLOAD_SIZE_BYTES - 1] ^= 0x01;
-
-    decode_assert_error(bytes, PAYLOAD_ERROR_CRC8_CHECK_FAIL);
-
-    printf("%s(): success\n", __func__);
-}
-
-void test_error_decode_version(void) {
-    uint8_t bytes[PAYLOAD_SIZE_BYTES];
-    copy_bytes_example(bytes);
-
-    bytes[0] ^= 0x01;
-
-    update_crc8(bytes);
-
-    decode_assert_error(bytes, PAYLOAD_ERROR_VERSION_INVALID);
-
-    printf("%s(): success\n", __func__);
-}
-
 void test_decode_encode(void) {
     payload_error_t error = PAYLOAD_NO_ERROR;
 
@@ -91,6 +67,30 @@ void test_decode_encode(void) {
     if (transaction_success) {
         printf("[success] %s()\n", __func__);
     }
+}
+
+void test_error_decode_crc8(void) {
+    uint8_t bytes[PAYLOAD_SIZE_BYTES];
+    copy_bytes_example(bytes);
+
+    bytes[PAYLOAD_SIZE_BYTES - 1] ^= 0x01;
+
+    decode_assert_error(bytes, PAYLOAD_ERROR_CRC8_CHECK_FAIL);
+
+    printf("%s(): success\n", __func__);
+}
+
+void test_error_decode_version(void) {
+    uint8_t bytes[PAYLOAD_SIZE_BYTES];
+    copy_bytes_example(bytes);
+
+    bytes[0] ^= 0x01;
+
+    update_crc8(bytes);
+
+    decode_assert_error(bytes, PAYLOAD_ERROR_VERSION_INVALID);
+
+    printf("%s(): success\n", __func__);
 }
 
 int main(void) {
