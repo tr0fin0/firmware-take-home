@@ -303,6 +303,20 @@ void test_error_encode_flow_exponent_invalid(void) {
     printf("[success] %s()\n", __func__);
 }
 
+void test_error_encode_reserved(void) {
+    payload_t payload = copy_payload_example();
+
+    payload.reserved = (
+        (payload_reserved_t) (
+            (((uint8_t) PAYLOAD_RESERVED_EXPECTED) ^ 0x01) & 0x07
+        )
+    );
+
+    encode_assert_error(payload, PAYLOAD_ERROR_RESERVED_INVALID);
+
+    printf("[success] %s()\n", __func__);
+}
+
 void test_error_encode_temperature_above_maximal(void) {
     payload_t payload = copy_payload_example();
 
@@ -378,6 +392,7 @@ int main(void) {
     test_error_decode_flow_exponent_invalid();
     test_error_encode_flow_exponent_invalid();
     test_error_decode_reserved();
+    test_error_encode_reserved();
 
     test_flags_combinations();
 
