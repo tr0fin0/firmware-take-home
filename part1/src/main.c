@@ -94,6 +94,22 @@ void test_error_decode_battery_above_maximal(void) {
     printf("[success] %s()\n", __func__);
 }
 
+void test_error_decode_battery_below_minimal(void) {
+    uint8_t bytes[PAYLOAD_SIZE_BYTES];
+    copy_bytes_example(bytes);
+
+    set_battery_mv(
+        bytes,
+        (payload_battery_mv_t) (PAYLOAD_BATTERY_MINIMUM_MV - 1U)
+    );
+
+    update_crc8(bytes);
+
+    decode_assert_error(bytes, PAYLOAD_ERROR_BATTERY_BELOW_MINIMAL);
+
+    printf("[success] %s()\n", __func__);
+}
+
 void test_error_decode_crc8(void) {
     uint8_t bytes[PAYLOAD_SIZE_BYTES];
     copy_bytes_example(bytes);
@@ -138,6 +154,7 @@ int main(void) {
     test_error_decode_version();
     test_error_decode_device_type();
     test_error_decode_battery_above_maximal();
+    test_error_decode_battery_below_minimal();
 
     return 0;
 }
