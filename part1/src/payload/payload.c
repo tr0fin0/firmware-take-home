@@ -264,6 +264,21 @@ static payload_error_t payload_encode_flags(
 
     return PAYLOAD_NO_ERROR;
 }
+static payload_error_t payload_encode_pulse_count(
+    payload_t payload, uint8_t bytes[PAYLOAD_SIZE_BYTES]
+) {
+    uint32_t pulse_count = (uint32_t) payload.pulse_count;
+
+    bytes[1] |= (uint8_t) ((pulse_count & 0x00000001) << 7);
+    bytes[2] |= (uint8_t) ((pulse_count >> 1)  & 0x000000FF);
+    bytes[3] |= (uint8_t) ((pulse_count >> 9)  & 0x000000FF);
+    bytes[4] |= (uint8_t) ((pulse_count >> 17) & 0x000000FF);
+    bytes[5] |= (uint8_t) ((pulse_count >> 25) & 0x00000007);
+
+    return PAYLOAD_NO_ERROR;
+}
+
+
 static payload_error_t payload_encode_version(
     payload_t payload, uint8_t bytes[PAYLOAD_SIZE_BYTES]
 ) {
@@ -356,6 +371,10 @@ payload_error_t payload_encode(
         return error;
     }
 
+    error = payload_encode_pulse_count(payload, bytes);
+    if (error != PAYLOAD_NO_ERROR) {
+        return error;
+    }
 
     return PAYLOAD_NO_ERROR;
 }
