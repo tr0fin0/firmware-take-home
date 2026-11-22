@@ -167,6 +167,22 @@ void test_error_decode_temperature_above_maximal(void) {
     printf("[success] %s()\n", __func__);
 }
 
+void test_error_decode_temperature_below_minimal(void) {
+    uint8_t bytes[PAYLOAD_SIZE_BYTES];
+    copy_bytes_example(bytes);
+
+    set_temperature(
+        bytes,
+        (payload_temperature_dc_t) (PAYLOAD_TEMPERATURE_MINIMUM_DC - 1U)
+    );
+
+    update_crc8(bytes);
+
+    decode_assert_error(bytes, PAYLOAD_ERROR_TEMPERATURE_BELOW_MINIMAL);
+
+    printf("[success] %s()\n", __func__);
+}
+
 void test_error_decode_version(void) {
     uint8_t bytes[PAYLOAD_SIZE_BYTES];
     copy_bytes_example(bytes);
@@ -189,6 +205,7 @@ int main(void) {
     test_error_decode_battery_above_maximal();
     test_error_decode_battery_below_minimal();
     test_error_decode_temperature_above_maximal();
+    test_error_decode_temperature_below_minimal();
 
     return 0;
 }
