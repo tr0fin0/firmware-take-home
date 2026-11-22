@@ -31,6 +31,16 @@ static void set_battery_mv(
     bytes[6] = (uint8_t) ((bytes[6] & 0xC0) | ((battery_mv >> 6) & 0x003F));
 }
 
+static void set_flow_exponent(
+    uint8_t bytes[PAYLOAD_SIZE_BYTES],
+    uint8_t exponent
+) {
+    uint16_t flow_config = (uint16_t) ((uint16_t)exponent << 8);
+
+    bytes[8] = (uint8_t) ((bytes[8] & 0x01) | ((flow_config & 0x007F) << 1));
+    bytes[9] = (uint8_t) ((bytes[9] & 0xE0) | ((flow_config >> 7) & 0x001F));
+}
+
 static void set_temperature(
     uint8_t bytes[PAYLOAD_SIZE_BYTES],
     payload_temperature_dc_t temperature_dc
@@ -151,6 +161,19 @@ void test_error_decode_device_type(void) {
     printf("[success] %s()\n", __func__);
 }
 
+void test_error_decode_flow_exponent_invalid(void) {
+    uint8_t bytes[PAYLOAD_SIZE_BYTES];
+    copy_bytes_example(bytes);
+
+    set_flow_exponent(bytes, 0x0F);
+
+    update_crc8(bytes);
+
+    decode_assert_error(bytes, PAYLOAD_ERROR_FLOW_EXPONENT_INVALID);
+
+    printf("[success] %s()\n", __func__);
+}
+
 void test_error_decode_temperature_above_maximal(void) {
     uint8_t bytes[PAYLOAD_SIZE_BYTES];
     copy_bytes_example(bytes);
@@ -206,6 +229,7 @@ int main(void) {
     test_error_decode_battery_below_minimal();
     test_error_decode_temperature_above_maximal();
     test_error_decode_temperature_below_minimal();
+    test_error_decode_flow_exponent_invalid();
 
     return 0;
 }
