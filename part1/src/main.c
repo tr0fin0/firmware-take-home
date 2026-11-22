@@ -174,6 +174,25 @@ void test_error_decode_flow_exponent_invalid(void) {
     printf("[success] %s()\n", __func__);
 }
 
+void test_error_decode_reserved(void) {
+    uint8_t bytes[PAYLOAD_SIZE_BYTES];
+    copy_bytes_example(bytes);
+
+    uint8_t invalid_reserved = (
+        (uint8_t) PAYLOAD_RESERVED_EXPECTED ^ 0x01
+    ) & 0x07;
+
+    bytes[10] = (uint8_t) (
+        (bytes[10] & 0x1F) | (invalid_reserved << 5)
+    );
+
+    update_crc8(bytes);
+
+    decode_assert_error(bytes, PAYLOAD_ERROR_RESERVED_INVALID);
+
+    printf("[success] %s()\n", __func__);
+}
+
 void test_error_decode_temperature_above_maximal(void) {
     uint8_t bytes[PAYLOAD_SIZE_BYTES];
     copy_bytes_example(bytes);
@@ -230,6 +249,7 @@ int main(void) {
     test_error_decode_temperature_above_maximal();
     test_error_decode_temperature_below_minimal();
     test_error_decode_flow_exponent_invalid();
+    test_error_decode_reserved();
 
     return 0;
 }
