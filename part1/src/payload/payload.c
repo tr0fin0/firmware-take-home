@@ -298,6 +298,33 @@ static payload_error_t payload_encode_pulse_count(
 }
 
 
+static payload_error_t payload_encode_temperature(
+    payload_t payload, uint8_t bytes[PAYLOAD_SIZE_BYTES]
+) {
+    payload_temperature_dc_t temperature_dc = payload.temperature_dc;
+
+    if (temperature_dc > PAYLOAD_TEMPERATURE_MAXIMUM_DC) {
+        return PAYLOAD_ERROR_TEMPERATURE_ABOVE_MAXIMAL;
+    }
+
+    if (temperature_dc < PAYLOAD_TEMPERATURE_MINIMUM_DC) {
+        return PAYLOAD_ERROR_TEMPERATURE_BELOW_MINIMAL;
+    }
+
+    uint16_t temperature_raw = 0;
+    if (temperature_dc < 0) {
+        temperature_raw = (uint16_t) (temperature_dc + (1 << 10));
+    } else {
+        temperature_raw = (uint16_t) (temperature_dc);
+    }
+
+    bytes[6] |= (uint8_t) ((temperature_raw & 0x0003) << 6);
+    bytes[7] |= (uint8_t) ((temperature_raw >> 2) & 0x00FF);
+    bytes[8] |= (uint8_t) ((temperature_dc < 0) ? 0x01 : 0x00);
+
+    return PAYLOAD_NO_ERROR;
+}
+
 static payload_error_t payload_encode_version(
     payload_t payload, uint8_t bytes[PAYLOAD_SIZE_BYTES]
 ) {
@@ -396,6 +423,11 @@ payload_error_t payload_encode(
     }
 
     error = payload_encode_battery(payload, bytes);
+    if (error != PAYLOAD_NO_ERROR) {
+        return error;
+    }
+
+    error = payload_encode_temperature(payload, bytes);
     if (error != PAYLOAD_NO_ERROR) {
         return error;
     }
