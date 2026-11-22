@@ -31,6 +31,23 @@ static void set_battery_mv(
     bytes[6] = (uint8_t) ((bytes[6] & 0xC0) | ((battery_mv >> 6) & 0x003F));
 }
 
+static void set_temperature(
+    uint8_t bytes[PAYLOAD_SIZE_BYTES],
+    payload_temperature_dc_t temperature_dc
+) {
+    uint16_t temperature_raw = 0;
+
+    if (temperature_dc < 0) {
+        temperature_raw = (uint16_t) (temperature_dc + (1 << 10));
+    } else {
+        temperature_raw = (uint16_t) (temperature_dc);
+    }
+
+    bytes[6] = (uint8_t) ((bytes[6] & 0x3F) | ((temperature_raw & 0x0003) << 6));
+    bytes[7] = (uint8_t) ((temperature_raw >> 2) & 0x00FF);
+    bytes[8] = (uint8_t) ((bytes[8] & 0xFE) | (temperature_dc < 0 ? 0x01 : 0x00));
+}
+
 static void update_crc8(uint8_t bytes[PAYLOAD_SIZE_BYTES]) {
     crc8_config_t crc8_config = {
         .init_value     = 0x00,
@@ -134,6 +151,22 @@ void test_error_decode_device_type(void) {
     printf("[success] %s()\n", __func__);
 }
 
+void test_error_decode_temperature_above_maximal(void) {
+    uint8_t bytes[PAYLOAD_SIZE_BYTES];
+    copy_bytes_example(bytes);
+
+    set_temperature(
+        bytes,
+        (payload_temperature_dc_t) (PAYLOAD_TEMPERATURE_MAXIMUM_DC + 1U)
+    );
+
+    update_crc8(bytes);
+
+    decode_assert_error(bytes, PAYLOAD_ERROR_TEMPERATURE_ABOVE_MAXIMAL);
+
+    printf("[success] %s()\n", __func__);
+}
+
 void test_error_decode_version(void) {
     uint8_t bytes[PAYLOAD_SIZE_BYTES];
     copy_bytes_example(bytes);
@@ -155,6 +188,7 @@ int main(void) {
     test_error_decode_device_type();
     test_error_decode_battery_above_maximal();
     test_error_decode_battery_below_minimal();
+    test_error_decode_temperature_above_maximal();
 
     return 0;
 }
