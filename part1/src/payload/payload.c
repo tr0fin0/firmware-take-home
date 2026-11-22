@@ -259,6 +259,23 @@ static payload_error_t payload_encode_battery(
     return PAYLOAD_NO_ERROR;
 }
 
+static payload_error_t payload_encode_crc8(uint8_t bytes[PAYLOAD_SIZE_BYTES]) {
+    crc8_config_t crc8_config = {
+        .init_value     = 0x00,
+        .polynomial     = 0x07,
+        .reflection_in  = false,
+        .reflection_out = false,
+        .xor_out        = 0x00
+    };
+
+    crc8_value_t crc8_value = crc8_compute(
+        crc8_config, bytes, PAYLOAD_SIZE_BYTES - 1
+    );
+
+    bytes[PAYLOAD_SIZE_BYTES - 1] = crc8_value;
+    return PAYLOAD_NO_ERROR;
+}
+
 static payload_error_t payload_encode_device_type(
     payload_t payload, uint8_t bytes[PAYLOAD_SIZE_BYTES]
 ) {
@@ -542,6 +559,8 @@ payload_error_t payload_encode(
     if (error != PAYLOAD_NO_ERROR) {
         return error;
     }
+
+    payload_encode_crc8(bytes);
 
     return PAYLOAD_NO_ERROR;
 }
