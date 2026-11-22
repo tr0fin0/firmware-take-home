@@ -283,6 +283,78 @@ static payload_error_t payload_encode_flags(
 
     return PAYLOAD_NO_ERROR;
 }
+
+static payload_error_t payload_encode_flow(
+    payload_t payload, uint8_t bytes[PAYLOAD_SIZE_BYTES]
+) {
+    payload_flow_lph_t flow_lph = payload.flow_lph;
+
+    uint8_t flow_exponent = 0;
+    uint8_t flow_mantissa = 0;
+
+    if (flow_lph < 0.0f) {
+        return PAYLOAD_ERROR_FLOW_EXPONENT_INVALID;
+    }
+
+    if (flow_lph < flow_exponents[1]) {
+        uint16_t rounded_mantissa = (uint16_t) ((flow_lph * 1024.0f) + 0.5f);
+
+        if (rounded_mantissa > 0xFF) {
+            flow_exponent = 1;
+            flow_mantissa = 0;
+        } else {
+            flow_exponent = 0;
+            flow_mantissa = (uint8_t) rounded_mantissa;
+        }
+    } else {
+        const uint8_t num_flow_exponents = (
+            (uint8_t) (sizeof(flow_exponents) / sizeof(flow_exponents[0]))
+        );
+        
+        bool exponent_found = false;
+        for (uint8_t i = 1; i < num_flow_exponents; i++) {
+            float i_exponent = flow_exponents[i];
+
+            if (flow_lph < (i_exponent * 2.0f)) {
+                float mantissa_value = (
+                    ((flow_lph / i_exponent) - 1.0f) * 256.0f
+                );
+
+                uint16_t rounded_mantissa = (uint16_t) (mantissa_value + 0.5f);
+
+                if (rounded_mantissa > 0xFF) {
+                    if ((uint8_t) (i + 1) >= num_flow_exponents) {
+                        return PAYLOAD_ERROR_FLOW_EXPONENT_INVALID;
+                    }
+
+                    flow_exponent = (uint8_t) (i + 1);
+                    flow_mantissa = 0;
+                } else {
+                    flow_exponent = i;
+                    flow_mantissa = (uint8_t) rounded_mantissa;
+                }
+
+                exponent_found = true;
+                break;
+            }
+        }
+
+        if (!exponent_found) {
+            return PAYLOAD_ERROR_FLOW_EXPONENT_INVALID;
+        }
+    }
+
+    uint16_t flow_config = 0;
+
+    flow_config |= (uint16_t) flow_mantissa;
+    flow_config |= (uint16_t) (((uint16_t) flow_exponent) << 8);
+
+    bytes[8] |= (uint8_t) ((flow_config & 0x007F) << 1);
+    bytes[9] |= (uint8_t) ((flow_config >> 7) & 0x001F);
+
+    return PAYLOAD_NO_ERROR;
+}
+
 static payload_error_t payload_encode_pulse_count(
     payload_t payload, uint8_t bytes[PAYLOAD_SIZE_BYTES]
 ) {
@@ -428,6 +500,11 @@ payload_error_t payload_encode(
     }
 
     error = payload_encode_temperature(payload, bytes);
+    if (error != PAYLOAD_NO_ERROR) {
+        return error;
+    }
+
+    error = payload_encode_flow(payload, bytes);
     if (error != PAYLOAD_NO_ERROR) {
         return error;
     }
