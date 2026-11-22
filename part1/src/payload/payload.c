@@ -239,6 +239,19 @@ static payload_error_t payload_decode_version(
     payload->version = version;
     return PAYLOAD_NO_ERROR;
 }
+static payload_error_t payload_encode_version(
+    payload_t payload, uint8_t bytes[PAYLOAD_SIZE_BYTES]
+) {
+    payload_version_t version = payload.version;
+
+    if (version != PAYLOAD_VERSION_1) {
+        return PAYLOAD_ERROR_VERSION_INVALID;
+    }
+
+    bytes[0] |= (uint8_t) (version & 0x0F);
+
+    return PAYLOAD_NO_ERROR;
+}
 
 payload_error_t payload_decode(
     payload_t *payload, uint8_t bytes[PAYLOAD_SIZE_BYTES]
@@ -301,6 +314,13 @@ payload_error_t payload_decode(
 payload_error_t payload_encode(
     payload_t payload, uint8_t bytes[PAYLOAD_SIZE_BYTES]
 ) {
+    payload_error_t error;
+
+    error = payload_encode_version(payload, bytes);
+    if (error != PAYLOAD_NO_ERROR) {
+        return error;
+    }
+
 
     return PAYLOAD_NO_ERROR;
 }
