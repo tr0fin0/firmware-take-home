@@ -22,6 +22,20 @@ static void decode_assert_error(
     assert(error == expected_error);
 }
 
+static void update_crc8(uint8_t bytes[PAYLOAD_SIZE_BYTES]) {
+    crc8_config_t crc8_config = {
+        .init_value     = 0x00,
+        .polynomial     = 0x07,
+        .reflection_in  = false,
+        .reflection_out = false,
+        .xor_out        = 0x00
+    };
+
+    bytes[PAYLOAD_SIZE_BYTES - 1] = crc8_compute(
+        crc8_config, bytes, PAYLOAD_SIZE_BYTES - 1
+    );
+}
+
 void test_error_decode_crc8(void) {
     uint8_t bytes[PAYLOAD_SIZE_BYTES];
     copy_bytes_example(bytes);
@@ -29,6 +43,19 @@ void test_error_decode_crc8(void) {
     bytes[PAYLOAD_SIZE_BYTES - 1] ^= 0x01;
 
     decode_assert_error(bytes, PAYLOAD_ERROR_CRC8_CHECK_FAIL);
+
+    printf("%s(): success\n", __func__);
+}
+
+void test_error_decode_version(void) {
+    uint8_t bytes[PAYLOAD_SIZE_BYTES];
+    copy_bytes_example(bytes);
+
+    bytes[0] ^= 0x01;
+
+    update_crc8(bytes);
+
+    decode_assert_error(bytes, PAYLOAD_ERROR_VERSION_INVALID);
 
     printf("%s(): success\n", __func__);
 }
@@ -70,6 +97,7 @@ int main(void) {
     test_decode_encode();
 
     test_error_decode_crc8();
+    test_error_decode_version();
 
     return 0;
 }
