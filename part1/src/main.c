@@ -1,7 +1,8 @@
 #include "payload.h"
 #include <stdint.h>
+#include <stdio.h>
 
-void test_example(void) {
+void test_decode_encode(void) {
     payload_error_t error = PAYLOAD_NO_ERROR;
 
     uint8_t bytes_decode[PAYLOAD_SIZE_BYTES] = {
@@ -31,12 +32,12 @@ void test_example(void) {
     }
 
     if (transaction_success) {
-        payload_print(&payload_example);
+        printf("[success] %s()\n", __func__);
     }
 }
 
 int main(void) {
-    test_example();
+    test_decode_encode();
 
     return 0;
 }
