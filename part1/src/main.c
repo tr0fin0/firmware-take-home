@@ -1,3 +1,4 @@
+#include <assert.h>
 #include "payload.h"
 #include <stdint.h>
 #include <stdio.h>
@@ -11,6 +12,26 @@ static void copy_bytes_example(uint8_t bytes[PAYLOAD_SIZE_BYTES]) {
     memcpy(bytes, bytes_example, PAYLOAD_SIZE_BYTES);
 }
 
+static void decode_assert_error(
+    uint8_t bytes[PAYLOAD_SIZE_BYTES],
+    payload_error_t expected_error
+) {
+    payload_t payload = {0};
+    payload_error_t error = payload_decode(&payload, bytes);
+
+    assert(error == expected_error);
+}
+
+void test_error_decode_crc8(void) {
+    uint8_t bytes[PAYLOAD_SIZE_BYTES];
+    copy_bytes_example(bytes);
+
+    bytes[PAYLOAD_SIZE_BYTES - 1] ^= 0x01;
+
+    decode_assert_error(bytes, PAYLOAD_ERROR_CRC8_CHECK_FAIL);
+
+    printf("%s(): success\n", __func__);
+}
 
 void test_decode_encode(void) {
     payload_error_t error = PAYLOAD_NO_ERROR;
@@ -47,6 +68,8 @@ void test_decode_encode(void) {
 
 int main(void) {
     test_decode_encode();
+
+    test_error_decode_crc8();
 
     return 0;
 }
