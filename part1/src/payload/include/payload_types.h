@@ -42,11 +42,6 @@ typedef enum payload_error {
     PAYLOAD_ERROR_DEVICE_TYPE_INVALID,
 
     /**
-     * @brief The payload flag field contains an invalid value.
-     */
-    PAYLOAD_ERROR_FLAG_INVALID,
-
-    /**
      * @brief The flow exponent field contains an invalid value.
      */
     PAYLOAD_ERROR_FLOW_EXPONENT_INVALID,

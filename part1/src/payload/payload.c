@@ -20,9 +20,6 @@ static const char *payload_error_messages[NUMBER_OF_PAYLOAD_ERRORS] = {
     [PAYLOAD_ERROR_DEVICE_TYPE_INVALID]
         = "payload with invalid device type",
 
-    [PAYLOAD_ERROR_FLAG_INVALID]
-        = "payload with invalid flag",
-
     [PAYLOAD_ERROR_FLOW_EXPONENT_INVALID]
         = "payload with invalid flow exponent",
 
