@@ -91,7 +91,7 @@ void test_error_decode_battery_above_maximal(void) {
 
     decode_assert_error(bytes, PAYLOAD_ERROR_BATTERY_ABOVE_MAXIMAL);
 
-    printf("%s(): success\n", __func__);
+    printf("[success] %s()\n", __func__);
 }
 
 void test_error_decode_crc8(void) {
@@ -102,7 +102,7 @@ void test_error_decode_crc8(void) {
 
     decode_assert_error(bytes, PAYLOAD_ERROR_CRC8_CHECK_FAIL);
 
-    printf("%s(): success\n", __func__);
+    printf("[success] %s()\n", __func__);
 }
 
 void test_error_decode_device_type(void) {
@@ -115,7 +115,7 @@ void test_error_decode_device_type(void) {
 
     decode_assert_error(bytes, PAYLOAD_ERROR_DEVICE_TYPE_INVALID);
 
-    printf("%s(): success\n", __func__);
+    printf("[success] %s()\n", __func__);
 }
 
 void test_error_decode_version(void) {
@@ -128,7 +128,7 @@ void test_error_decode_version(void) {
 
     decode_assert_error(bytes, PAYLOAD_ERROR_VERSION_INVALID);
 
-    printf("%s(): success\n", __func__);
+    printf("[success] %s()\n", __func__);
 }
 
 int main(void) {
