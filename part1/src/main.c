@@ -80,6 +80,19 @@ void test_error_decode_crc8(void) {
     printf("%s(): success\n", __func__);
 }
 
+void test_error_decode_device_type(void) {
+    uint8_t bytes[PAYLOAD_SIZE_BYTES];
+    copy_bytes_example(bytes);
+
+    bytes[0] ^= 0x10;
+
+    update_crc8(bytes);
+
+    decode_assert_error(bytes, PAYLOAD_ERROR_DEVICE_TYPE_INVALID);
+
+    printf("%s(): success\n", __func__);
+}
+
 void test_error_decode_version(void) {
     uint8_t bytes[PAYLOAD_SIZE_BYTES];
     copy_bytes_example(bytes);
@@ -98,6 +111,7 @@ int main(void) {
 
     test_error_decode_crc8();
     test_error_decode_version();
+    test_error_decode_device_type();
 
     return 0;
 }
