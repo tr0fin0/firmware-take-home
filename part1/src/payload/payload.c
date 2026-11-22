@@ -240,6 +240,25 @@ static payload_error_t payload_decode_version(
     return PAYLOAD_NO_ERROR;
 }
 
+static payload_error_t payload_encode_battery(
+    payload_t payload, uint8_t bytes[PAYLOAD_SIZE_BYTES]
+) {
+    payload_battery_mv_t battery_mv = payload.battery_mv;
+
+    if (battery_mv > PAYLOAD_BATTERY_MAXIMUM_MV) {
+        return PAYLOAD_ERROR_BATTERY_ABOVE_MAXIMAL;
+    }
+
+    if (battery_mv < PAYLOAD_BATTERY_MINIMUM_MV) {
+        return PAYLOAD_ERROR_BATTERY_BELOW_MINIMAL;
+    }
+
+    bytes[5] |= (uint8_t) ((battery_mv & 0x003F) << 2);
+    bytes[6] |= (uint8_t) ((battery_mv >> 6) & 0x003F);
+
+    return PAYLOAD_NO_ERROR;
+}
+
 static payload_error_t payload_encode_device_type(
     payload_t payload, uint8_t bytes[PAYLOAD_SIZE_BYTES]
 ) {
@@ -372,6 +391,11 @@ payload_error_t payload_encode(
     }
 
     error = payload_encode_pulse_count(payload, bytes);
+    if (error != PAYLOAD_NO_ERROR) {
+        return error;
+    }
+
+    error = payload_encode_battery(payload, bytes);
     if (error != PAYLOAD_NO_ERROR) {
         return error;
     }
