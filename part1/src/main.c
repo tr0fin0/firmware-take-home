@@ -258,6 +258,16 @@ void test_error_decode_version(void) {
     printf("[success] %s()\n", __func__);
 }
 
+void test_error_encode_device_type(void) {
+    payload_t payload = copy_payload_example();
+
+    payload.device_type = (payload_device_type_t) (payload.device_type ^ 0x01);
+
+    encode_assert_error(payload, PAYLOAD_ERROR_DEVICE_TYPE_INVALID);
+
+    printf("[success] %s()\n", __func__);
+}
+
 void test_error_encode_version(void) {
     payload_t payload = copy_payload_example();
 
@@ -297,6 +307,7 @@ int main(void) {
     test_error_decode_version();
     test_error_encode_version();
     test_error_decode_device_type();
+    test_error_encode_device_type();
     test_error_decode_battery_above_maximal();
     test_error_decode_battery_below_minimal();
     test_error_decode_temperature_above_maximal();
