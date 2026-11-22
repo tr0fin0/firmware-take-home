@@ -258,6 +258,18 @@ void test_error_decode_version(void) {
     printf("[success] %s()\n", __func__);
 }
 
+void test_error_encode_battery_above_maximal(void) {
+    payload_t payload = copy_payload_example();
+
+    payload.battery_mv = (
+        (payload_battery_mv_t) (PAYLOAD_BATTERY_MAXIMUM_MV + 1U)
+    );
+
+    encode_assert_error(payload, PAYLOAD_ERROR_BATTERY_ABOVE_MAXIMAL);
+
+    printf("[success] %s()\n", __func__);
+}
+
 void test_error_encode_device_type(void) {
     payload_t payload = copy_payload_example();
 
@@ -309,6 +321,7 @@ int main(void) {
     test_error_decode_device_type();
     test_error_encode_device_type();
     test_error_decode_battery_above_maximal();
+    test_error_encode_battery_above_maximal();
     test_error_decode_battery_below_minimal();
     test_error_decode_temperature_above_maximal();
     test_error_decode_temperature_below_minimal();
