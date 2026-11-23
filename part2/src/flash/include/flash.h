@@ -1,12 +1,17 @@
 /**
- * @file
- * @brief
+ * @file flash.h
+ * @brief Configurable RAM-backed flash abstraction with failure injection.
  *
- * @author
- * @date
- */
+ * @author Guilherme Nunes Trofino
+ * @date 2026-11-22 */
 
 #pragma once
+
+#include <stdbool.h>
+#include <stdint.h>
+
+#include <stdbool.h>
+#include <stdint.h>
 
 #include <stdbool.h>
 #include <stdint.h>
