@@ -12,19 +12,28 @@
 #include <stdint.h>
 
 /**
- * @brief Registry failure code represented by a byte.
+ * @brief Registry failure code represented by an enumeration.
  *
- * Values from 0x01 through 0xFF are reserved for application-specific failure
- * codes.
+ * The value is serialized as one byte. Zero indicates that the board passed
+ * the test. Values from 0x01 through 0xFF are reserved for application-
+ * specific failure codes.
  */
 typedef enum registry_error_code {
     /**
-     * @brief
+     * @brief Indicates that the board passed the test.
      */
     REGISTRY_NO_ERROR = (uint8_t) 0x00,
 
     /**
-     * @brief
+     * @brief Largest value reserved for an application-specific error code.
+     */
+    REGISTRY_MAX_ERROR_CODE = (uint8_t) 0xFF,
+
+    /**
+     * @brief One past the largest one-byte error-code value.
+     *
+     * Its numeric value is 256, counting all 256 byte values including
+     * `REGISTRY_NO_ERROR`.
      */
     NUMBER_OF_REGISTRY_ERRORS
 } registry_error_code_t;
