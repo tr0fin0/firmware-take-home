@@ -158,7 +158,7 @@ flash_error_t flash_get_config(const flash_t *flash, flash_config_t *config) {
 
 flash_error_t flash_inject_failure(
     flash_t *flash,
-    flash_failure_t operation,
+    flash_failure_t failure,
     flash_units_before_failure_t units_before_failure
 ) {
     if (!flash_is_initialized(flash)) {
@@ -166,14 +166,14 @@ flash_error_t flash_inject_failure(
     }
 
     if (
-        (operation != FLASH_FAILURE_PROGRAM) &&
-        (operation != FLASH_FAILURE_ERASE)
+        (failure != FLASH_FAILURE_PROGRAM) &&
+        (failure != FLASH_FAILURE_ERASE)
     ) {
         return FLASH_ERROR_INVALID_ARGUMENT;
     }
 
     flash->failure_injected         = true;
-    flash->failure                  = operation;
+    flash->failure                  = failure;
     flash->failure_units_remaining  = units_before_failure;
 
     return FLASH_NO_ERROR;
