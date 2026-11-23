@@ -44,31 +44,16 @@ typedef struct queue_snapshot {
     queue_snapshot_slot_t slot;
 } queue_snapshot_t;
 
-static void queue_write_u16_le(flash_byte_t *destination, uint16_t value) {
-    destination[0] = (flash_byte_t) ( value        & 0xFFU);
-    destination[1] = (flash_byte_t) ((value >> 8U) & 0xFFU);
-}
+static flash_size_t queue_align_up(
+    flash_size_t value, flash_program_size_t alignment
+) {
+    const flash_size_t remainder = value % alignment;
 
-static void queue_write_u32_le(flash_byte_t *destination, uint32_t value) {
-    destination[0] = (flash_byte_t) ( value         & 0xFFUL);
-    destination[1] = (flash_byte_t) ((value >>  8U) & 0xFFUL);
-    destination[2] = (flash_byte_t) ((value >> 16U) & 0xFFUL);
-    destination[3] = (flash_byte_t) ((value >> 24U) & 0xFFUL);
-}
+    if (remainder == 0U) {
+        return value;
+    }
 
-static uint16_t queue_read_u16_le(const flash_byte_t *source) {
-    return (
-        (uint16_t) (((uint16_t) source[0]) | (((uint16_t) source[1]) << 8U))
-    );
-}
-
-static uint32_t queue_read_u32_le(const flash_byte_t *source) {
-    return (
-        ((uint32_t) source[0]) |
-        ((uint32_t) source[1] <<  8U) |
-        ((uint32_t) source[2] << 16U) |
-        ((uint32_t) source[3] << 24U)
-    );
+    return (value + (alignment - remainder));
 }
 
 static uint32_t queue_crc32(const flash_byte_t *data, flash_size_t size_bytes) {
@@ -89,39 +74,43 @@ static uint32_t queue_crc32(const flash_byte_t *data, flash_size_t size_bytes) {
     return (crc ^ 0xFFFFFFFFUL);
 }
 
-static flash_size_t queue_align_up(
-    flash_size_t value, flash_program_size_t alignment
+static bool queue_flash_data_valid(
+    const queue_t *queue,
+    flash_address_t address,
+    const flash_byte_t *expected,
+    flash_size_t size_bytes
 ) {
-    const flash_size_t remainder = value % alignment;
+    flash_byte_t readback[FLASH_MAX_PROGRAM_UNIT_SIZE_BYTES];
+    flash_size_t offset = 0U;
 
-    if (remainder == 0U) {
-        return value;
+    while (offset < size_bytes) {
+        const flash_size_t remaining = size_bytes - offset;
+        const flash_size_t chunk_size = (
+            (remaining < sizeof(readback)) ? remaining : sizeof(readback)
+        );
+
+        if (
+            flash_read(
+                queue->flash,
+                address + offset,
+                readback,
+                chunk_size
+            ) != FLASH_NO_ERROR
+        ) {
+            return false;
+        }
+
+        if (memcmp(&expected[offset], readback, chunk_size) != 0) {
+            return false;
+        }
+
+        offset += chunk_size;
     }
 
-    return (value + (alignment - remainder));
+    return true;
 }
 
-static flash_address_t queue_get_slot_address(
-    const queue_t *queue, queue_snapshot_slot_t slot
-) {
-    const flash_size_t slot_size = queue->flash_config.capacity_bytes / 2U;
-
-    if (slot == QUEUE_SNAPSHOT_SLOT_A) {
-        return 0U;
-    }
-
-    return slot_size;
-}
-
-static queue_snapshot_slot_t queue_get_inactive_slot(const queue_t *queue) {
-    if (queue->active_slot == QUEUE_SNAPSHOT_SLOT_A) {
-        return QUEUE_SNAPSHOT_SLOT_B;
-    }
-
-    return QUEUE_SNAPSHOT_SLOT_A;
-}
-
-static bool queue_flash_geometry_is_valid(const flash_config_t *config) {
+static bool queue_flash_geometry_valid(const flash_config_t *config) {
     if (
         (config == NULL) ||
         (config->capacity_bytes == 0U) ||
@@ -161,24 +150,54 @@ static bool queue_flash_geometry_is_valid(const flash_config_t *config) {
     return slot_size_bytes >= required_slot_size;
 }
 
-static void queue_serialize_registry(
-    flash_byte_t *destination, const registry_t *registry
+static flash_address_t queue_get_slot_address(
+    const queue_t *queue, queue_snapshot_slot_t slot
 ) {
-    memcpy(
-        destination,
-        registry->serial_number,
-        REGISTRY_SERIAL_NUMBER_SIZE
-    );
+    const flash_size_t slot_size = queue->flash_config.capacity_bytes / 2U;
 
-    destination[REGISTRY_SERIAL_NUMBER_SIZE] = registry->error_code;
+    if (slot == QUEUE_SNAPSHOT_SLOT_A) {
+        return 0U;
+    }
 
-    queue_write_u32_le(
-        &destination[REGISTRY_SERIAL_NUMBER_SIZE + 1U],
-        registry->timestamp
+    return slot_size;
+}
+
+static queue_snapshot_slot_t queue_get_slot_inactive(const queue_t *queue) {
+    if (queue->active_slot == QUEUE_SNAPSHOT_SLOT_A) {
+        return QUEUE_SNAPSHOT_SLOT_B;
+    }
+
+    return QUEUE_SNAPSHOT_SLOT_A;
+}
+
+static uint16_t queue_read_u16_le(const flash_byte_t *source) {
+    return (
+        (uint16_t) (((uint16_t) source[0]) | (((uint16_t) source[1]) << 8U))
     );
 }
 
-static bool queue_deserialize_registry(
+static uint32_t queue_read_u32_le(const flash_byte_t *source) {
+    return (
+        ((uint32_t) source[0]) |
+        ((uint32_t) source[1] <<  8U) |
+        ((uint32_t) source[2] << 16U) |
+        ((uint32_t) source[3] << 24U)
+    );
+}
+
+static void queue_write_u16_le(flash_byte_t *destination, uint16_t value) {
+    destination[0] = (flash_byte_t) ( value        & 0xFFU);
+    destination[1] = (flash_byte_t) ((value >> 8U) & 0xFFU);
+}
+
+static void queue_write_u32_le(flash_byte_t *destination, uint32_t value) {
+    destination[0] = (flash_byte_t) ( value         & 0xFFUL);
+    destination[1] = (flash_byte_t) ((value >>  8U) & 0xFFUL);
+    destination[2] = (flash_byte_t) ((value >> 16U) & 0xFFUL);
+    destination[3] = (flash_byte_t) ((value >> 24U) & 0xFFUL);
+}
+
+static bool queue_registry_deserialize(
     const flash_byte_t *source, registry_t *registry
 ) {
     memcpy(
@@ -196,7 +215,24 @@ static bool queue_deserialize_registry(
     return true;
 }
 
-static queue_snapshot_read_status_t queue_read_snapshot(
+static void queue_registry_serialize(
+    flash_byte_t *destination, const registry_t *registry
+) {
+    memcpy(
+        destination,
+        registry->serial_number,
+        REGISTRY_SERIAL_NUMBER_SIZE
+    );
+
+    destination[REGISTRY_SERIAL_NUMBER_SIZE] = registry->error_code;
+
+    queue_write_u32_le(
+        &destination[REGISTRY_SERIAL_NUMBER_SIZE + 1U],
+        registry->timestamp
+    );
+}
+
+static queue_snapshot_read_status_t queue_snapshot_read(
     const queue_t *queue,
     queue_snapshot_slot_t slot,
     queue_snapshot_t *snapshot
@@ -294,7 +330,7 @@ static queue_snapshot_read_status_t queue_read_snapshot(
         );
 
         if (
-            !queue_deserialize_registry(
+            !queue_registry_deserialize(
                 &data_buffer[record_offset],
                 &snapshot->records[index]
             )
@@ -310,43 +346,7 @@ static queue_snapshot_read_status_t queue_read_snapshot(
     return QUEUE_SNAPSHOT_READ_VALID;
 }
 
-static bool queue_verify_flash_data(
-    const queue_t *queue,
-    flash_address_t address,
-    const flash_byte_t *expected,
-    flash_size_t size_bytes
-) {
-    flash_byte_t readback[FLASH_MAX_PROGRAM_UNIT_SIZE_BYTES];
-    flash_size_t offset = 0U;
-
-    while (offset < size_bytes) {
-        const flash_size_t remaining = size_bytes - offset;
-        const flash_size_t chunk_size = (
-            (remaining < sizeof(readback)) ? remaining : sizeof(readback)
-        );
-
-        if (
-            flash_read(
-                queue->flash,
-                address + offset,
-                readback,
-                chunk_size
-            ) != FLASH_NO_ERROR
-        ) {
-            return false;
-        }
-
-        if (memcmp(&expected[offset], readback, chunk_size) != 0) {
-            return false;
-        }
-
-        offset += chunk_size;
-    }
-
-    return true;
-}
-
-static queue_error_t queue_write_snapshot(
+static queue_error_t queue_snapshot_write(
     const queue_t *queue,
     const registry_t *records,
     queue_record_count_t record_count,
@@ -370,7 +370,7 @@ static queue_error_t queue_write_snapshot(
         config->program_size_bytes
     );
 
-    const queue_snapshot_slot_t target_slot = queue_get_inactive_slot(queue);
+    const queue_snapshot_slot_t target_slot = queue_get_slot_inactive(queue);
 
     const flash_address_t slot_address = queue_get_slot_address(
         queue, target_slot
@@ -409,7 +409,7 @@ static queue_error_t queue_write_snapshot(
             ((flash_size_t) index * QUEUE_SERIALIZED_REGISTRY_SIZE_BYTES)
         );
 
-        queue_serialize_registry(
+        queue_registry_serialize(
             &data_buffer[record_offset],
             &records[index]
         );
@@ -452,7 +452,7 @@ static queue_error_t queue_write_snapshot(
     }
 
     if (
-        !queue_verify_flash_data(
+        !queue_flash_data_valid(
             queue,
             data_address,
             data_buffer,
@@ -477,7 +477,7 @@ static queue_error_t queue_write_snapshot(
     }
 
     if (
-        !queue_verify_flash_data(
+        !queue_flash_data_valid(
             queue,
             commit_address,
             commit_buffer,
@@ -489,6 +489,62 @@ static queue_error_t queue_write_snapshot(
 
     *written_slot = target_slot;
     *written_generation = new_generation;
+
+    return QUEUE_NO_ERROR;
+}
+
+queue_error_t queue_ack(queue_t *queue) {
+    if (queue == NULL) {
+        return QUEUE_ERROR_INVALID_ARGUMENT;
+    }
+
+    if (!queue->initialized) {
+        return QUEUE_ERROR_NOT_INITIALIZED;
+    }
+
+    if (queue->record_count == 0U) {
+        return QUEUE_ERROR_EMPTY;
+    }
+
+    if (queue->generation == UINT32_MAX) {
+        return QUEUE_ERROR_GENERATION_EXHAUSTED;
+    }
+
+    registry_t candidate_records[QUEUE_CAPACITY];
+    memset(candidate_records, 0, sizeof(candidate_records));
+
+    const queue_record_count_t candidate_count = (
+        (queue_record_count_t) (queue->record_count - 1U)
+    );
+
+    for (queue_record_count_t index = 0U; index < candidate_count; index++) {
+        candidate_records[index] = queue->records[index + 1U];
+    }
+
+    queue_snapshot_slot_t written_slot      = QUEUE_SNAPSHOT_SLOT_NONE;
+    queue_generation_t written_generation   = 0U;
+
+    const queue_error_t persist_status = queue_snapshot_write(
+        queue,
+        candidate_records,
+        candidate_count,
+        &written_slot,
+        &written_generation
+    );
+
+    if (persist_status != QUEUE_NO_ERROR) {
+        return persist_status;
+    }
+
+    memset(queue->records, 0, sizeof(queue->records));
+    memcpy(
+        queue->records,
+        candidate_records,
+        ((size_t)candidate_count * sizeof(registry_t))
+    );
+    queue->record_count = candidate_count;
+    queue->active_slot  = written_slot;
+    queue->generation   = written_generation;
 
     return QUEUE_NO_ERROR;
 }
@@ -505,7 +561,7 @@ queue_error_t queue_init(queue_t *queue, flash_t *flash) {
         return QUEUE_ERROR_FLASH_CONFIGURATION;
     }
 
-    if (!queue_flash_geometry_is_valid(&config)) {
+    if (!queue_flash_geometry_valid(&config)) {
         return QUEUE_ERROR_FLASH_CONFIGURATION;
     }
 
@@ -515,12 +571,12 @@ queue_error_t queue_init(queue_t *queue, flash_t *flash) {
     queue_snapshot_t snapshot_a;
     queue_snapshot_t snapshot_b;
 
-    const queue_snapshot_read_status_t status_a = queue_read_snapshot(
+    const queue_snapshot_read_status_t status_a = queue_snapshot_read(
         queue,
         QUEUE_SNAPSHOT_SLOT_A,
         &snapshot_a
     );
-    const queue_snapshot_read_status_t status_b = queue_read_snapshot(
+    const queue_snapshot_read_status_t status_b = queue_snapshot_read(
         queue,
         QUEUE_SNAPSHOT_SLOT_B,
         &snapshot_b
@@ -579,6 +635,23 @@ queue_error_t queue_init(queue_t *queue, flash_t *flash) {
     return QUEUE_NO_ERROR;
 }
 
+queue_error_t queue_peek(const queue_t *queue, registry_t *registry) {
+    if ((queue == NULL) || (registry == NULL)) {
+        return QUEUE_ERROR_INVALID_ARGUMENT;
+    }
+
+    if (!queue->initialized) {
+        return QUEUE_ERROR_NOT_INITIALIZED;
+    }
+
+    if (queue->record_count == 0U) {
+        return QUEUE_ERROR_EMPTY;
+    }
+
+    *registry = queue->records[0];
+    return QUEUE_NO_ERROR;
+}
+
 queue_error_t queue_push(queue_t *queue, const registry_t *registry) {
     if ((queue == NULL) || (registry == NULL)) {
         return QUEUE_ERROR_INVALID_ARGUMENT;
@@ -609,7 +682,7 @@ queue_error_t queue_push(queue_t *queue, const registry_t *registry) {
     queue_snapshot_slot_t written_slot      = QUEUE_SNAPSHOT_SLOT_NONE;
     queue_generation_t written_generation   = 0U;
 
-    const queue_error_t persist_status = queue_write_snapshot(
+    const queue_error_t persist_status = queue_snapshot_write(
         queue,
         candidate_records,
         (queue_record_count_t)(queue->record_count + 1U),
@@ -623,79 +696,6 @@ queue_error_t queue_push(queue_t *queue, const registry_t *registry) {
 
     memcpy(queue->records, candidate_records, sizeof(candidate_records));
     ++queue->record_count;
-    queue->active_slot  = written_slot;
-    queue->generation   = written_generation;
-
-    return QUEUE_NO_ERROR;
-}
-
-queue_error_t queue_peek(const queue_t *queue, registry_t *registry) {
-    if ((queue == NULL) || (registry == NULL)) {
-        return QUEUE_ERROR_INVALID_ARGUMENT;
-    }
-
-    if (!queue->initialized) {
-        return QUEUE_ERROR_NOT_INITIALIZED;
-    }
-
-    if (queue->record_count == 0U) {
-        return QUEUE_ERROR_EMPTY;
-    }
-
-    *registry = queue->records[0];
-    return QUEUE_NO_ERROR;
-}
-
-queue_error_t queue_ack(queue_t *queue) {
-    if (queue == NULL) {
-        return QUEUE_ERROR_INVALID_ARGUMENT;
-    }
-
-    if (!queue->initialized) {
-        return QUEUE_ERROR_NOT_INITIALIZED;
-    }
-
-    if (queue->record_count == 0U) {
-        return QUEUE_ERROR_EMPTY;
-    }
-
-    if (queue->generation == UINT32_MAX) {
-        return QUEUE_ERROR_GENERATION_EXHAUSTED;
-    }
-
-    registry_t candidate_records[QUEUE_CAPACITY];
-    memset(candidate_records, 0, sizeof(candidate_records));
-
-    const queue_record_count_t candidate_count = (
-        (queue_record_count_t) (queue->record_count - 1U)
-    );
-
-    for (queue_record_count_t index = 0U; index < candidate_count; index++) {
-        candidate_records[index] = queue->records[index + 1U];
-    }
-
-    queue_snapshot_slot_t written_slot      = QUEUE_SNAPSHOT_SLOT_NONE;
-    queue_generation_t written_generation   = 0U;
-
-    const queue_error_t persist_status = queue_write_snapshot(
-        queue,
-        candidate_records,
-        candidate_count,
-        &written_slot,
-        &written_generation
-    );
-
-    if (persist_status != QUEUE_NO_ERROR) {
-        return persist_status;
-    }
-
-    memset(queue->records, 0, sizeof(queue->records));
-    memcpy(
-        queue->records,
-        candidate_records,
-        ((size_t)candidate_count * sizeof(registry_t))
-    );
-    queue->record_count = candidate_count;
     queue->active_slot  = written_slot;
     queue->generation   = written_generation;
 
