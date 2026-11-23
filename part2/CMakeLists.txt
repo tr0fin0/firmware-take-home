@@ -9,6 +9,7 @@ set(CMAKE_C_EXTENSIONS OFF)
 add_executable(part2
     src/flash/flash.c
     src/main.c
+    src/queue/queue.c
     src/test/test.c
 )
 
