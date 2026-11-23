@@ -9,30 +9,85 @@
 #include <string.h>
 #include "test.h"
 
+/**
+ * @brief Total capacity of the fake flash used by the test fixture, in bytes.
+ */
 #define TEST_FLASH_CAPACITY_BYTES           4096U
 
+/**
+ * @brief Erase block size of the fake flash used by the test fixture, in bytes.
+ */
 #define TEST_FLASH_ERASE_BLOCK_SIZE_BYTES    256U
 
+/**
+ * @brief Programming unit size of the fake flash used by the test fixture,
+ * in bytes.
+ */
 #define TEST_FLASH_PROGRAM_UNIT_SIZE_BYTES     4U
 
 /**
- * @brief Test fixture containing persistent bytes and volatile driver handles.
+ * @brief Test fixture containing persistent storage and volatile driver state.
+ *
+ * Holds the configuration, backing memory and driver instances required to
+ * initialize and operate the registry queue during host-side tests.
  */
 typedef struct test {
+    /**
+     * @brief Configuration describing the fake flash memory geometry.
+     */
     flash_config_t config;
+
+    /**
+     * @brief RAM-backed storage representing the contents of flash memory.
+     *
+     * Preserves its contents when the flash and queue instances are
+     * reinitialized to simulate a system reboot.
+     */
     flash_byte_t storage[TEST_FLASH_CAPACITY_BYTES];
+
+    /**
+     * @brief Fake flash driver instance operating on the backing storage.
+     */
     flash_t flash;
+
+    /**
+     * @brief Queue instance under test.
+     *
+     * Holds the volatile representation of the persistent registry queue.
+     */
     queue_t queue;
 } test_t;
 
+/**
+ * @brief Shared test fixture.
+ *
+ * Provides the flash storage and driver instances used by the test functions.
+ */
 static test_t test;
 
+/**
+ * @brief Default flash configuration used by the test fixture.
+ *
+ * Defines the capacity, erase block size and programming unit size of the
+ * fake flash memory.
+ */
 static const flash_config_t test_flash_config = {
     .capacity_bytes     = TEST_FLASH_CAPACITY_BYTES,
     .erase_size_bytes   = TEST_FLASH_ERASE_BLOCK_SIZE_BYTES,
     .program_size_bytes = TEST_FLASH_PROGRAM_UNIT_SIZE_BYTES
 };
 
+/**
+ * @brief Initializes the test fixture and an empty registry queue.
+ *
+ * Copies the provided flash configuration, initializes the backing storage
+ * to the erased state and initializes the fake flash and queue instances.
+ *
+ * @param[in] config Flash configuration to apply to the test fixture.
+ *
+ * @retval true The flash and queue were successfully initialized.
+ * @retval false The configuration is invalid or an initialization failed.
+ */
 static bool test_initialize(const flash_config_t *config) {
     if (config == NULL) {
         return false;
@@ -57,6 +112,20 @@ static bool test_initialize(const flash_config_t *config) {
     );
 }
 
+/**
+ * @brief Simulates a system reboot while preserving flash contents.
+ *
+ * Reinitializes the fake flash driver and queue instances using the existing
+ * test configuration and backing storage.
+ *
+ * The queue initialization reconstructs its volatile state from the previously
+ * persisted snapshot.
+ *
+ * @retval true The flash and queue were successfully reinitialized.
+ * @retval false A flash or queue initialization operation failed.
+ *
+ * @note The backing storage is not erased or modified before reinitialization.
+ */
 static bool test_reboot(void) {
     if (
         flash_init(
@@ -74,6 +143,23 @@ static bool test_reboot(void) {
     );
 }
 
+/**
+ * @brief Creates a registry with a deterministic serial number and test data.
+ *
+ * Generates a fixed-width serial number using the `BOARD` prefix followed
+ * by the decimal representation of the supplied identifier, aligned to the
+ * right within the remaining serial number positions.
+ *
+ * Assigns the provided error code and timestamp to the registry.
+ *
+ * @param[in] identifier Numeric identifier used to generate the serial number.
+ * @param[in] error_code Test result error code.
+ * @param[in] timestamp Registry timestamp.
+ *
+ * @return Initialized registry structure.
+ *
+ * @note The registry is zero-initialized before its fields are populated.
+ */
 static registry_t test_registry_create(
     uint32_t identifier,
     registry_error_code_t error_code,
@@ -101,6 +187,18 @@ static registry_t test_registry_create(
     return registry;
 }
 
+/**
+ * @brief Compares two registries for equality.
+ *
+ * Compares the complete fixed-width serial numbers, error codes and
+ * timestamps of both registries.
+ *
+ * @param[in] l Pointer to the first registry.
+ * @param[in] r Pointer to the second registry.
+ *
+ * @retval true All registry fields are equal.
+ * @retval false At least one registry field differs.
+ */
 static bool test_registry_equal(const registry_t *l, const registry_t *r) {
     return (
         (
@@ -115,6 +213,28 @@ static bool test_registry_equal(const registry_t *l, const registry_t *r) {
     );
 }
 
+/**
+ * @brief Verifies that the queue contains the expected registries in FIFO order.
+ *
+ * Repeatedly retrieves the oldest registry using @ref queue_peek, compares
+ * it against the corresponding expected registry and removes it using
+ * @ref queue_ack.
+ *
+ * After processing all expected registries, verifies that the queue is empty.
+ *
+ * @param[in] expected_records Array containing the expected registries
+ *                             in FIFO order.
+ * @param[in] expected_count Number of expected registries.
+ *
+ * @retval true All registries were retrieved in the expected order and
+ * the queue is empty afterward.
+ *
+ * @retval false A registry differs, a queue operation fails or unexpected
+ * registries remain in the queue.
+ *
+ * @note This function modifies the queue by acknowledging every registry
+ * successfully retrieved during verification.
+ */
 static bool test_queue_contains_sequence(
     const registry_t *expected_records, queue_record_count_t expected_count
 ) {
@@ -141,6 +261,23 @@ static bool test_queue_contains_sequence(
     );
 }
 
+/**
+ * @brief Verifies that the queue RAM state matches an expected sequence.
+ *
+ * Compares the queue record count and each occupied registry against the
+ * expected registries without modifying the queue.
+ *
+ * @param[in] expected_records Array containing the expected registries
+ *                             in FIFO order.
+ * @param[in] expected_count Expected number of registries in the queue.
+ *
+ * @retval true The queue contains exactly the expected registries in the
+ *              expected FIFO order.
+ * @retval false The record count or at least one registry differs.
+ *
+ * @note This function inspects the queue's internal RAM representation
+ * directly and does not access flash.
+ */
 static bool test_queue_equals(
     const registry_t *expected_records, queue_record_count_t expected_count
 ) {
