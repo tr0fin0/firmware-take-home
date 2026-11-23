@@ -10,12 +10,6 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-#include <stdbool.h>
-#include <stdint.h>
-
-#include <stdbool.h>
-#include <stdint.h>
-
 /**
  * @brief Flash functions errors.
  */
