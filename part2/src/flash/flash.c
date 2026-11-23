@@ -196,13 +196,13 @@ flash_error_t flash_init(
     }
 
     if (
-        (config->capacity_bytes == 0U) ||
-        (config->erase_size_bytes == 0U) ||
-        (config->program_size_bytes == 0U) ||
-        (config->program_size_bytes > FLASH_MAX_PROGRAM_UNIT_SIZE_BYTES) ||
-        (config->capacity_bytes > storage_size_bytes) ||
-        ((config->capacity_bytes % config->erase_size_bytes) != 0U) ||
-        ((config->erase_size_bytes % config->program_size_bytes) != 0U)
+        ( config->capacity_bytes     == 0U) ||
+        ( config->capacity_bytes     > storage_size_bytes) ||
+        ((config->capacity_bytes     % config->erase_size_bytes)   != 0U) ||
+        ((config->erase_size_bytes   % config->program_size_bytes) != 0U) ||
+        ( config->erase_size_bytes   == 0U) ||
+        ( config->program_size_bytes == 0U) ||
+        ( config->program_size_bytes > FLASH_MAX_PROGRAM_UNIT_SIZE_BYTES)
     ) {
         return FLASH_ERROR_INVALID_CONFIGURATION;
     }
