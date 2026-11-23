@@ -195,6 +195,15 @@ flash_error_t flash_erase(
 );
 
 /**
+ * @brief Return a human-readable name for a flash error value.
+ *
+ * @param status Flash error to describe.
+ *
+ * @return Static error name. Unknown values return `FLASH_ERROR_UNKNOWN`.
+ */
+const char *flash_error_string(flash_error_t error);
+
+/**
  * @brief Erase the complete configured flash region.
  *
  * It is subject to erase alignment and failure injection.

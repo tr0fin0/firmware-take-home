@@ -110,6 +110,34 @@ flash_error_t flash_erase(
     return FLASH_NO_ERROR;
 }
 
+const char *flash_error_string(flash_error_t error) {
+    switch (error) {
+        case FLASH_NO_ERROR:
+            return "FLASH_NO_ERROR";
+
+        case FLASH_ERROR_INVALID_ARGUMENT:
+            return "FLASH_ERROR_INVALID_ARGUMENT";
+
+        case FLASH_ERROR_INVALID_CONFIGURATION:
+            return "FLASH_ERROR_INVALID_CONFIGURATION";
+
+        case FLASH_ERROR_OUT_OF_RANGE:
+            return "FLASH_ERROR_OUT_OF_RANGE";
+
+        case FLASH_ERROR_ALIGNMENT:
+            return "FLASH_ERROR_ALIGNMENT";
+
+        case FLASH_ERROR_REQUIRES_ERASE:
+            return "FLASH_ERROR_REQUIRES_ERASE";
+
+        case FLASH_ERROR_INJECTED_FAILURE:
+            return "FLASH_ERROR_INJECTED_FAILURE";
+
+        default:
+            return "FLASH_ERROR_UNKNOWN";
+    }
+}
+
 flash_error_t flash_format(flash_t *flash) {
     if (!flash_is_initialized(flash)) {
         return FLASH_ERROR_INVALID_ARGUMENT;
@@ -217,7 +245,7 @@ flash_error_t flash_program(
         return FLASH_ERROR_ALIGNMENT;
     }
 
-    for (flash_size_t index = 0U; index < size_bytes; ++index) {
+    for (flash_size_t index = 0U; index < size_bytes; index++) {
         const flash_byte_t current      = flash->storage[address + index];
         const flash_byte_t requested    = source[index];
 
