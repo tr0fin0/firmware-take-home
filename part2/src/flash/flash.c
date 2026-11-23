@@ -237,11 +237,10 @@ flash_error_t flash_program(
         return FLASH_NO_ERROR;
     }
 
-    if ((address % flash->config.program_size_bytes) != 0U) {
-        return FLASH_ERROR_ALIGNMENT;
-    }
-
-    if ((size_bytes % flash->config.program_size_bytes) != 0U) {
+    if (
+        ((address       % flash->config.program_size_bytes) != 0U) ||
+        ((size_bytes    % flash->config.program_size_bytes) != 0U)
+    ) {
         return FLASH_ERROR_ALIGNMENT;
     }
 
