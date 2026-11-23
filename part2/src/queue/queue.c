@@ -549,6 +549,43 @@ queue_error_t queue_ack(queue_t *queue) {
     return QUEUE_NO_ERROR;
 }
 
+const char *queue_error_string(queue_error_t error) {
+    switch (error) {
+        case QUEUE_NO_ERROR:
+            return "QUEUE_NO_ERROR";
+
+        case QUEUE_ERROR_INVALID_ARGUMENT:
+            return "QUEUE_ERROR_INVALID_ARGUMENT";
+
+        case QUEUE_ERROR_NOT_INITIALIZED:
+            return "QUEUE_ERROR_NOT_INITIALIZED";
+
+        case QUEUE_ERROR_INVALID_REGISTRY:
+            return "QUEUE_ERROR_INVALID_REGISTRY";
+
+        case QUEUE_ERROR_FULL:
+            return "QUEUE_ERROR_FULL";
+
+        case QUEUE_ERROR_EMPTY:
+            return "QUEUE_ERROR_EMPTY";
+
+        case QUEUE_ERROR_FLASH_CONFIGURATION:
+            return "QUEUE_ERROR_FLASH_CONFIGURATION";
+
+        case QUEUE_ERROR_FLASH_OPERATION:
+            return "QUEUE_ERROR_FLASH_OPERATION";
+
+        case QUEUE_ERROR_STORAGE_CORRUPT:
+            return "QUEUE_ERROR_STORAGE_CORRUPT";
+
+        case QUEUE_ERROR_GENERATION_EXHAUSTED:
+            return "QUEUE_ERROR_GENERATION_EXHAUSTED";
+
+        default:
+            return "QUEUE_STATUS_UNKNOWN";
+    }
+}
+
 queue_error_t queue_init(queue_t *queue, flash_t *flash) {
     if ((queue == NULL) || (flash == NULL)) {
         return QUEUE_ERROR_INVALID_ARGUMENT;

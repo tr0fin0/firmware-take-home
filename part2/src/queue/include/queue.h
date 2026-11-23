@@ -157,6 +157,15 @@ typedef struct queue {
 queue_error_t queue_ack(queue_t *queue);
 
 /**
+ * @brief Return a human-readable name for a queue error value.
+ *
+ * @param status Queue error to describe.
+ *
+ * @return Static error name. Unknown values return `QUEUE_ERROR_UNKNOWN`.
+ */
+const char *queue_error_string(queue_error_t error);
+
+/**
  * @brief Reconstruct the FIFO state from the configured flash region.
  *
  * The flash region is divided into two equal snapshot slots. Initialization
