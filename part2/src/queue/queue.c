@@ -3,47 +3,150 @@
 
 #include <string.h>
 
+/**
+ * @brief Byte offset of the CRC-32 field in the serialized snapshot.
+ *
+ * Calculated as the end of the snapshot header and all registry entries.
+ */
 #define QUEUE_SNAPSHOT_CRC_OFFSET                               \
     (                                                           \
         (QUEUE_SNAPSHOT_HEADER_SIZE_BYTES) +                    \
         (QUEUE_CAPACITY * QUEUE_SERIALIZED_REGISTRY_SIZE_BYTES) \
     )
 
+/**
+ * @brief Byte offset of the registry count field in the snapshot header.
+ *
+ * The field occupies one byte and indicates the number of valid registries
+ * stored in the snapshot.
+ */
 #define QUEUE_SNAPSHOT_COUNT_OFFSET         10U
 
+/**
+ * @brief Commit marker identifying a successfully committed snapshot.
+ *
+ * Stored at the beginning of the flash slot. The marker is programmed only
+ * after the snapshot data has been written and verified.
+ */
 #define QUEUE_SNAPSHOT_COMMIT_MARKER        0xC04D17EDUL
 
+/**
+ * @brief Magic number identifying the persistent queue snapshot format.
+ *
+ * Used during snapshot validation to distinguish queue data from unrelated
+ * or uninitialized flash contents.
+ */
 #define QUEUE_SNAPSHOT_MAGIC                0x51554555UL
 
+/**
+ * @brief Byte offset of the generation field in the snapshot header.
+ *
+ * The field occupies four bytes and identifies the snapshot generation.
+ */
 #define QUEUE_SNAPSHOT_GENERATION_OFFSET    6U
 
+/**
+ * @brief Byte offset of the magic number field in the snapshot header.
+ *
+ * The field occupies four bytes.
+ */
 #define QUEUE_SNAPSHOT_MAGIC_OFFSET         0U
 
+/**
+ * @brief Byte offset of the first serialized registry in the snapshot.
+ *
+ * Points immediately after the snapshot header.
+ */
 #define QUEUE_SNAPSHOT_RECORDS_OFFSET       QUEUE_SNAPSHOT_HEADER_SIZE_BYTES
 
+/**
+ * @brief Version of the persistent queue snapshot format.
+ *
+ * Incremented when changes to the serialized snapshot layout require a new
+ * storage format.
+ */
 #define QUEUE_SNAPSHOT_VERSION              1U
 
+/**
+ * @brief Byte offset of the format version field in the snapshot header.
+ *
+ * The field occupies two bytes.
+ */
 #define QUEUE_SNAPSHOT_VERSION_OFFSET       4U
 
 /**
  * @brief Result of inspecting one snapshot slot.
  */
 typedef enum queue_snapshot_read_status {
+    /**
+     * @brief No valid commit marker was found.
+     *
+     * Indicates that the snapshot has not been committed or that its
+     * commit marker is invalid.
+     */
     QUEUE_SNAPSHOT_READ_UNCOMMITTED = 0,
+
+    /**
+     * @brief Snapshot data passed all validation checks.
+     *
+     * Indicates that the commit marker, header, generation, record count
+     * and CRC are valid and the snapshot was successfully decoded.
+     */
     QUEUE_SNAPSHOT_READ_VALID,
+
+    /**
+     * @brief Snapshot contents are invalid or could not be read.
+     *
+     * Indicates a flash read error or invalid committed snapshot data,
+     * such as an incorrect magic number, unsupported version or CRC mismatch.
+     */
     QUEUE_SNAPSHOT_READ_CORRUPT
 } queue_snapshot_read_status_t;
 
 /**
  * @brief Decoded contents of one valid snapshot.
+ *
+ * Holds the registry entries and metadata recovered from a flash slot,
+ * represents the in-memory snapshot and is not directly written to flash.
  */
 typedef struct queue_snapshot {
+    /**
+     * @brief Registry entries stored in FIFO order.
+     *
+     * Contains the oldest registry at index zero and the newest registry at the
+     * last occupied index.
+     */
     registry_t records[QUEUE_CAPACITY];
+
+    /**
+     * @brief Number of valid registry entries in the snapshot.
+     */
     queue_record_count_t record_count;
+
+    /**
+     * @brief Generation number assigned to the snapshot.
+     *
+     * Used to identify the newest committed snapshot during initialization.
+     */
     queue_generation_t generation;
+
+    /**
+     * @brief Flash slot from which the snapshot was recovered.
+     */
     queue_snapshot_slot_t slot;
 } queue_snapshot_t;
 
+/**
+ * @brief Aligns a value to the next multiple of a specified alignment.
+ *
+ * Returns the original value when it is already aligned. Otherwise, rounds it
+ * up to the smallest multiple of the alignment greater than the original value.
+ *
+ * @param[in] value Value to align.
+ * @param[in] alignment Required alignment.
+ *
+ * @return Aligned value.
+ */
 static flash_size_t queue_align_up(
     flash_size_t value, flash_program_size_t alignment
 ) {
@@ -56,6 +159,17 @@ static flash_size_t queue_align_up(
     return (value + (alignment - remainder));
 }
 
+/**
+ * @brief Calculates the CRC-32 checksum of a byte buffer.
+ *
+ * Uses the reflected CRC-32 algorithm with an initial value of 0xFFFFFFFF,
+ * polynomial 0xEDB88320 and final XOR value of 0xFFFFFFFF.
+ *
+ * @param[in] data Pointer to the input byte buffer.
+ * @param[in] size_bytes Number of bytes to process.
+ *
+ * @return Calculated CRC-32 checksum.
+ */
 static uint32_t queue_crc32(const flash_byte_t *data, flash_size_t size_bytes) {
     uint32_t crc = 0xFFFFFFFFUL;
 
@@ -74,6 +188,21 @@ static uint32_t queue_crc32(const flash_byte_t *data, flash_size_t size_bytes) {
     return (crc ^ 0xFFFFFFFFUL);
 }
 
+/**
+ * @brief Validates flash data by comparing it with an expected byte buffer.
+ *
+ * Reads the flash contents in chunks and compares each chunk against the
+ * corresponding expected bytes.
+ *
+ * Returns false if a flash read fails or if any byte differs.
+ *
+ * @param[in] queue Queue instance providing access to flash.
+ * @param[in] address Starting flash address.
+ * @param[in] expected Pointer to the expected byte buffer.
+ * @param[in] size_bytes Number of bytes to compare.
+ *
+ * @return true All bytes were read successfully and match the expected data.
+ */
 static bool queue_flash_data_valid(
     const queue_t *queue,
     flash_address_t address,
@@ -110,6 +239,17 @@ static bool queue_flash_data_valid(
     return true;
 }
 
+/**
+ * @brief Validates the flash geometry required by the persistent queue.
+ *
+ * Checks that the flash configuration has valid nonzero dimensions, contains an
+ * even number of erase blocks, supports two equally sized slots and provides
+ * sufficient storage for a commit block and snapshot data in each slot.
+ *
+ * @param[in] config Flash geometry configuration.
+ *
+ * @return true The flash geometry satisfies the queue storage requirements.
+ */
 static bool queue_flash_geometry_valid(const flash_config_t *config) {
     if (
         (config == NULL) ||
@@ -150,6 +290,17 @@ static bool queue_flash_geometry_valid(const flash_config_t *config) {
     return slot_size_bytes >= required_slot_size;
 }
 
+/**
+ * @brief Retrieves the starting flash address of a snapshot slot.
+ *
+ * Slot A starts at address zero. Slot B starts at the midpoint of the
+ * configured flash region.
+ *
+ * @param[in] queue Queue instance containing the flash configuration.
+ * @param[in] slot Snapshot slot identifier.
+ *
+ * @return Starting flash address of the specified slot.
+ */
 static flash_address_t queue_get_slot_address(
     const queue_t *queue, queue_snapshot_slot_t slot
 ) {
@@ -162,6 +313,16 @@ static flash_address_t queue_get_slot_address(
     return slot_size;
 }
 
+/**
+ * @brief Determines the inactive snapshot slot.
+ *
+ * Selects Slot B when Slot A is active. Otherwise, selects Slot A.
+ * When no slot is active, Slot A is selected for the first snapshot.
+ *
+ * @param[in] queue Queue instance containing the active slot information.
+ *
+ * @return Inactive snapshot slot to be used for the next write.
+ */
 static queue_snapshot_slot_t queue_get_slot_inactive(const queue_t *queue) {
     if (queue->active_slot == QUEUE_SNAPSHOT_SLOT_A) {
         return QUEUE_SNAPSHOT_SLOT_B;
@@ -170,12 +331,32 @@ static queue_snapshot_slot_t queue_get_slot_inactive(const queue_t *queue) {
     return QUEUE_SNAPSHOT_SLOT_A;
 }
 
+/**
+ * @brief Reads a 16-bit unsigned integer in little-endian byte order.
+ *
+ * Reconstructs the integer from two consecutive bytes, with the least
+ * significant byte stored first.
+ *
+ * @param[in] source Pointer to the source byte buffer.
+ *
+ * @return Decoded 16-bit unsigned integer.
+ */
 static uint16_t queue_read_u16_le(const flash_byte_t *source) {
     return (
         (uint16_t) (((uint16_t) source[0]) | (((uint16_t) source[1]) << 8U))
     );
 }
 
+/**
+ * @brief Reads a 32-bit unsigned integer in little-endian byte order.
+ *
+ * Reconstructs the integer from four consecutive bytes, with the least
+ * significant byte stored first.
+ *
+ * @param[in] source Pointer to the source byte buffer.
+ *
+ * @return Decoded 32-bit unsigned integer.
+ */
 static uint32_t queue_read_u32_le(const flash_byte_t *source) {
     return (
         ((uint32_t) source[0]) |
@@ -185,11 +366,29 @@ static uint32_t queue_read_u32_le(const flash_byte_t *source) {
     );
 }
 
+/**
+ * @brief Writes a 16-bit unsigned integer in little-endian byte order.
+ *
+ * Stores the least significant byte first, followed by the most significant
+ * byte.
+ *
+ * @param[out] destination Pointer to the destination byte buffer.
+ * @param[in] value 16-bit unsigned integer to serialize.
+ */
 static void queue_write_u16_le(flash_byte_t *destination, uint16_t value) {
     destination[0] = (flash_byte_t) ( value        & 0xFFU);
     destination[1] = (flash_byte_t) ((value >> 8U) & 0xFFU);
 }
 
+/**
+ * @brief Writes a 32-bit unsigned integer in little-endian byte order.
+ *
+ * Stores the least significant byte first, followed by the remaining bytes
+ * in increasing order of significance.
+ *
+ * @param[out] destination Pointer to the destination byte buffer.
+ * @param[in] value 32-bit unsigned integer to serialize.
+ */
 static void queue_write_u32_le(flash_byte_t *destination, uint32_t value) {
     destination[0] = (flash_byte_t) ( value         & 0xFFUL);
     destination[1] = (flash_byte_t) ((value >>  8U) & 0xFFUL);
@@ -197,6 +396,19 @@ static void queue_write_u32_le(flash_byte_t *destination, uint32_t value) {
     destination[3] = (flash_byte_t) ((value >> 24U) & 0xFFUL);
 }
 
+/**
+ * @brief Deserializes a registry from its persistent byte representation.
+ *
+ * Extracts the fixed-width serial number, error code and timestamp from
+ * the source buffer and populates the destination registry.
+ *
+ * The timestamp is decoded using little-endian byte order.
+ *
+ * @param[in] source Pointer to the serialized registry.
+ * @param[out] registry Destination registry structure.
+ *
+ * @note This implementation does not validate the decoded serial number.
+ */
 static bool queue_registry_deserialize(
     const flash_byte_t *source, registry_t *registry
 ) {
@@ -215,6 +427,15 @@ static bool queue_registry_deserialize(
     return true;
 }
 
+/**
+ * @brief Serializes a registry into its persistent byte representation.
+ *
+ * Copies the fixed-width serial number and error code into the destination
+ * buffer and encodes the timestamp using little-endian byte order.
+ *
+ * @param[out] destination Destination byte buffer.
+ * @param[in] registry Registry to serialize.
+ */
 static void queue_registry_serialize(
     flash_byte_t *destination, const registry_t *registry
 ) {
@@ -232,6 +453,19 @@ static void queue_registry_serialize(
     );
 }
 
+/**
+ * @brief Reads and validates a snapshot from a flash slot.
+ *
+ * Reads the commit marker before accessing the snapshot data. If the marker
+ * is valid, reads and validates the snapshot header, generation, record count
+ * and CRC before deserializing its registry entries.
+ *
+ * The decoded snapshot is populated only when all validation checks succeed.
+ *
+ * @param[in] queue Queue instance providing access to flash and its geometry.
+ * @param[in] slot Flash slot containing the snapshot to inspect.
+ * @param[out] snapshot Destination structure for the decoded snapshot.
+ */
 static queue_snapshot_read_status_t queue_snapshot_read(
     const queue_t *queue,
     queue_snapshot_slot_t slot,
@@ -346,6 +580,28 @@ static queue_snapshot_read_status_t queue_snapshot_read(
     return QUEUE_SNAPSHOT_READ_VALID;
 }
 
+/**
+ * @brief Writes and commits a new queue snapshot to the inactive flash slot.
+ *
+ * Serializes the provided registries and snapshot metadata, calculates
+ * the CRC-32 checksum and writes the resulting data to the inactive slot.
+ *
+ * The destination slot is erased before programming. After writing,
+ * the snapshot data is read back and verified. The commit marker is
+ * programmed and verified only after the snapshot data has been validated.
+ *
+ * The active snapshot slot is not modified by this operation.
+ *
+ * @param[in] queue Queue instance providing access to flash.
+ * @param[in] records Registry entries to include in the new snapshot.
+ * @param[in] record_count Number of registry entries to serialize.
+ * @param[out] written_slot Receives the slot containing the committed snapshot.
+ * @param[out] written_generation Receives the generation.
+ *
+ * @note The snapshot commit marker is programmed after the snapshot data has
+ * been written and verified. This allows initialization to distinguish
+ * committed snapshots from interrupted writes.
+ */
 static queue_error_t queue_snapshot_write(
     const queue_t *queue,
     const registry_t *records,
