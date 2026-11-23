@@ -169,6 +169,75 @@ typedef struct flash {
 #define FLASH_MAX_PROGRAM_UNIT_SIZE_BYTES 256U
 
 /**
+ * @brief Disarm any pending failure injection.
+ *
+ * @param flash Initialized flash handle.
+ *
+ * @return `FLASH_NO_ERROR` on success; otherwise, an error status.
+ */
+flash_error_t flash_clear_failure_injection(flash_t *flash);
+
+/**
+ * @brief Erase one or more complete erase blocks.
+ *
+ * The size must be nonzero, and both the address and size must be aligned to
+ * the configured erase-block size. The operation can be interrupted after a
+ * configured number of complete erase blocks.
+ *
+ * @param flash Initialized flash handle.
+ * @param address First byte address to erase.
+ * @param size_bytes Number of bytes to erase.
+ *
+ * @return `FLASH_NO_ERROR` on success; otherwise, an error status.
+ */
+flash_error_t flash_erase(
+    flash_t *flash, flash_address_t address, flash_size_t size_bytes
+);
+
+/**
+ * @brief Erase the complete configured flash region.
+ *
+ * It is subject to erase alignment and failure injection.
+ *
+ * @param flash Initialized flash handle.
+ *
+ * @return `FLASH_NO_ERROR` on success; otherwise, an error status.
+ */
+flash_error_t flash_format(flash_t *flash);
+
+/**
+ * @brief Retrieve the active flash geometry.
+ *
+ * @param flash Initialized flash handle.
+ * @param config Destination for the geometry.
+ *
+ * @return `FLASH_NO_ERROR` on success; otherwise, an error status.
+ */
+flash_error_t flash_get_config(const flash_t *flash, flash_config_t *config);
+
+/**
+ * @brief Arm a one-shot failure after a number of matching operation units.
+ *
+ * For programming, one unit is the configured programming unit. For erasing,
+ * one unit is one erase block. The count is cumulative across matching calls:
+ * after the specified number of units have completed, the next matching unit
+ * fails. A value of zero fails before the first matching unit is modified.
+ * The injection disables itself when triggered. If an operation ends before
+ * the failure point, the injection remains armed for the next matching call.
+ *
+ * @param flash Initialized flash handle.
+ * @param failure Operation to interrupt.
+ * @param units_before_failure Number of complete matching units allowed.
+ *
+ * @return `FLASH_NO_ERROR` on success; otherwise, an error status.
+ */
+flash_error_t flash_inject_failure(
+    flash_t *flash,
+    flash_failure_t failure,
+    flash_units_before_failure_t units_before_failure
+);
+
+/**
  * @brief Attach a flash handle to caller-owned backing memory.
  *
  * This function validates and stores the geometry but does not erase or
@@ -188,37 +257,6 @@ flash_error_t flash_init(
     const flash_config_t *config,
     flash_byte_t *storage,
     flash_size_t storage_size_bytes
-);
-
-/**
- * @brief Erase the complete configured flash region.
- *
- * It is subject to erase alignment and failure injection.
- *
- * @param flash Initialized flash handle.
- *
- * @return `FLASH_NO_ERROR` on success; otherwise, an error status.
- */
-flash_error_t flash_format(flash_t *flash);
-
-/**
- * @brief Read bytes from the configured flash region.
- *
- * Reads may use any byte address and length, programming and erasing have
- * stricter alignment requirements.
- *
- * @param flash Initialized flash handle.
- * @param address First byte address to read.
- * @param destination Buffer receiving the read bytes.
- * @param size_bytes Number of bytes to read. A zero-length read is accepted.
- *
- * @return `FLASH_NO_ERROR` on success; otherwise, an error status.
- */
-flash_error_t flash_read(
-    const flash_t *flash,
-    flash_address_t address,
-    flash_byte_t *destination,
-    flash_size_t size_bytes
 );
 
 /**
@@ -246,59 +284,21 @@ flash_error_t flash_program(
 );
 
 /**
- * @brief Erase one or more complete erase blocks.
+ * @brief Read bytes from the configured flash region.
  *
- * The size must be nonzero, and both the address and size must be aligned to
- * the configured erase-block size. The operation can be interrupted after a
- * configured number of complete erase blocks.
+ * Reads may use any byte address and length, programming and erasing have
+ * stricter alignment requirements.
  *
  * @param flash Initialized flash handle.
- * @param address First byte address to erase.
- * @param size_bytes Number of bytes to erase.
+ * @param address First byte address to read.
+ * @param destination Buffer receiving the read bytes.
+ * @param size_bytes Number of bytes to read. A zero-length read is accepted.
  *
  * @return `FLASH_NO_ERROR` on success; otherwise, an error status.
  */
-flash_error_t flash_erase(
-    flash_t *flash, flash_address_t address, flash_size_t size_bytes
+flash_error_t flash_read(
+    const flash_t *flash,
+    flash_address_t address,
+    flash_byte_t *destination,
+    flash_size_t size_bytes
 );
-
-/**
- * @brief Arm a one-shot failure after a number of matching operation units.
- *
- * For programming, one unit is the configured programming unit. For erasing,
- * one unit is one erase block. The count is cumulative across matching calls:
- * after the specified number of units have completed, the next matching unit
- * fails. A value of zero fails before the first matching unit is modified.
- * The injection disables itself when triggered. If an operation ends before
- * the failure point, the injection remains armed for the next matching call.
- *
- * @param flash Initialized flash handle.
- * @param failure Operation to interrupt.
- * @param units_before_failure Number of complete matching units allowed.
- *
- * @return `FLASH_NO_ERROR` on success; otherwise, an error status.
- */
-flash_error_t flash_inject_failure(
-    flash_t *flash,
-    flash_failure_t failure,
-    flash_units_before_failure_t units_before_failure
-);
-
-/**
- * @brief Disarm any pending failure injection.
- *
- * @param flash Initialized flash handle.
- *
- * @return `FLASH_NO_ERROR` on success; otherwise, an error status.
- */
-flash_error_t flash_clear_failure_injection(flash_t *flash);
-
-/**
- * @brief Retrieve the active flash geometry.
- *
- * @param flash Initialized flash handle.
- * @param config Destination for the geometry.
- *
- * @return `FLASH_NO_ERROR` on success; otherwise, an error status.
- */
-flash_error_t flash_get_config(const flash_t *flash, flash_config_t *config);
