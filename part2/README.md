@@ -49,6 +49,14 @@ rm -rf build
 
 ## Implementation
 
+The serial number is assumed to contain only letters and numbers encoded in ASCII. Therefore each character would use only 1 byte of memory.
+
+The timestamp is assumed to follow ISO 8601 formatting.
+
+The error code is assumed to have 255 possible error descriptions and 1 no error description.
+
+When the persistent queue reaches its maximum capacity, new records are rejected without modifying existing records. The producer is responsible for applying backpressure and preventing additional tests from starting until storage becomes available. Successfully persisted records are never overwritten or discarded before a successful acknowledgement.
+
 ### AI Usage
 
 ### Future Improvements
