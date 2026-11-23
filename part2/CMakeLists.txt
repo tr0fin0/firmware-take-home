@@ -12,6 +12,8 @@ add_executable(part2
 )
 
 target_include_directories(part2 PRIVATE
+    src/flash/include
+    src/registry/include
     src/test/include
 )
 
