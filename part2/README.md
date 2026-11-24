@@ -88,6 +88,10 @@ The host test suite contains 18 test cases. It covers registry validation, flash
 
 ### AI Usage
 
+AI tools were used to discuss architectural decisions, generate and refactor C code, improve Doxygen documentation, and assist with test development.
+
+Generated code and suggestions were reviewed and adapted. The implementation was compiled and tested using GCC.
+
 ### Future Improvements
 
 ### Tasks
