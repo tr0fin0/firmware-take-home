@@ -5,7 +5,16 @@
 Assumptions applicable for both parts are:
 
 - commit messages: conventional commits
+
 - development strategy: feature branches with squashed PRs linked to issues.
+
+- registry serial number: contains exactly 12 ASCII alphanumeric characters: `0-9`, `A-Z`, and `a-z`, stored as a fixed-width array without a null terminator.
+
+- registry error: `0x00` represents a successful test and `0x01 - 0xFF` are reserved for application-specific failure codes.
+
+- registry timestamp: an opaque uint32_t.
+
+- queue: stores up to 32 registries. When full, push rejects a new registry and returns `QUEUE_STATUS_ERROR_FULL`. The producer is responsible for applying backpressure. Existing records are never overwritten to make room.
 
 ## Build and Run
 
