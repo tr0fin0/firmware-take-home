@@ -94,6 +94,16 @@ Generated code and suggestions were reviewed and adapted. The implementation was
 
 ### Future Improvements
 
+With more time I would like to :
+
+- benchmark the current implementation with other approaches to evaluate its efficiency
+
+  - **why**: lake of experience with flash implementation approaches
+
+- verify the registries integrality with functions
+
+  - **why**: invalid registries should not occupy space in the queue
+
 ### Tasks
 
 - implement queue in flash
