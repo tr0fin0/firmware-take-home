@@ -1,21 +1,5 @@
 # Part 2
 
-## Assumptions
-
-Assumptions applicable for both parts are:
-
-- commit messages: conventional commits
-
-- development strategy: feature branches with squashed PRs linked to issues.
-
-- registry serial number: contains exactly 12 ASCII alphanumeric characters: `0-9`, `A-Z`, and `a-z`, stored as a fixed-width array without a null terminator.
-
-- registry error: `0x00` represents a successful test and `0x01 - 0xFF` are reserved for application-specific failure codes.
-
-- registry timestamp: an opaque uint32_t.
-
-- queue: stores up to 32 registries. When full, push rejects a new registry and returns `QUEUE_STATUS_ERROR_FULL`. The producer is responsible for applying backpressure. Existing records are never overwritten to make room.
-
 ## Build and Run
 
 ### Requirements
@@ -58,15 +42,25 @@ rm -rf build
 
 ## Implementation
 
-The implementation is divided into three modules:
+### Assumptions
 
-- **registry**: defines a production test result. Each registry is serialized explicitly into 17 bytes: 12 serial-number bytes, one error-code byte and four little-endian timestamp bytes. The implementation does not write `sizeof(registry_t)` to flash.
+Registry would contain exactly 12 bytes with 12 ASCII alphanumeric characters: `0-9`, `A-Z`, and `a-z`, stored as a fixed-width array without a null terminator for the serial number.
 
-- **flash**: provides a configurable RAM-backed fake flash. Its configuration defines capacity, erase-block size and programming-unit size. It models erased bytes (0xFF), programming from 1 to 0, erase-block operations and injectable partial program/erase failures. The backing byte array is caller-owned so it can be retained when the flash and queue handles are recreated to simulate a reboot.
+Registry would contain exactly 1 byte with an error code where `0x00` represents a successful test and `0x01 - 0xFF` are reserved for application-specific failure codes.
 
-- **queue**: implements a fixed-capacity FIFO of 32 registries. It exposes `queue_init()`, `queue_push()`, `queue_peek()` and `queue_ack()`, returning a `queue_error_t` value for each operation.
+Registry would contain exactly 4 bytes to store the timestamp of the creation of the registry as `uint32_t`.
+
+Queue stores up to 32 registries. When full, `queue_push()` rejects a new registry and returns `QUEUE_STATUS_ERROR_FULL` ensuring records are never overwritten to make room. The producer is responsible for applying backpressure in the system.
 
 ### Details
+
+The implementation is divided into three modules:
+
+- `flash`: provides a configurable RAM-backed fake flash. Its configuration defines capacity, erase-block size and programming-unit size. It models erased bytes (0xFF), programming from 1 to 0, erase-block operations and injectable partial program/erase failures. The backing byte array is caller-owned so it can be retained when the flash and queue handles are recreated to simulate a reboot.
+
+- `registry`: defines a production test result. Each registry is serialized explicitly into 17 bytes: 12 serial-number bytes, one error-code byte and four little-endian timestamp bytes. The implementation does not write `sizeof(registry_t)` to flash.
+
+- `queue`: implements a fixed-capacity FIFO of 32 registries. It exposes `queue_init()`, `queue_push()`, `queue_peek()` and `queue_ack()`, returning a `queue_error_t` value for each operation.
 
 #### Persistence
 
