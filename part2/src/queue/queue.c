@@ -1,0 +1,996 @@
+#include "queue.h"
+#include "queue_constants.h"
+
+#include <string.h>
+
+/**
+ * @brief Byte offset of the CRC-32 field in the serialized snapshot.
+ *
+ * Calculated as the end of the snapshot header and all registry entries.
+ */
+#define QUEUE_SNAPSHOT_CRC_OFFSET                               \
+    (                                                           \
+        (QUEUE_SNAPSHOT_HEADER_SIZE_BYTES) +                    \
+        (QUEUE_CAPACITY * QUEUE_SERIALIZED_REGISTRY_SIZE_BYTES) \
+    )
+
+/**
+ * @brief Byte offset of the registry count field in the snapshot header.
+ *
+ * The field occupies one byte and indicates the number of valid registries
+ * stored in the snapshot.
+ */
+#define QUEUE_SNAPSHOT_COUNT_OFFSET         10U
+
+/**
+ * @brief Commit marker identifying a successfully committed snapshot.
+ *
+ * Stored at the beginning of the flash slot. The marker is programmed only
+ * after the snapshot data has been written and verified.
+ */
+#define QUEUE_SNAPSHOT_COMMIT_MARKER        0xC04D17EDUL
+
+/**
+ * @brief Magic number identifying the persistent queue snapshot format.
+ *
+ * Used during snapshot validation to distinguish queue data from unrelated
+ * or uninitialized flash contents.
+ */
+#define QUEUE_SNAPSHOT_MAGIC                0x51554555UL
+
+/**
+ * @brief Byte offset of the generation field in the snapshot header.
+ *
+ * The field occupies four bytes and identifies the snapshot generation.
+ */
+#define QUEUE_SNAPSHOT_GENERATION_OFFSET    6U
+
+/**
+ * @brief Byte offset of the magic number field in the snapshot header.
+ *
+ * The field occupies four bytes.
+ */
+#define QUEUE_SNAPSHOT_MAGIC_OFFSET         0U
+
+/**
+ * @brief Byte offset of the first serialized registry in the snapshot.
+ *
+ * Points immediately after the snapshot header.
+ */
+#define QUEUE_SNAPSHOT_RECORDS_OFFSET       QUEUE_SNAPSHOT_HEADER_SIZE_BYTES
+
+/**
+ * @brief Version of the persistent queue snapshot format.
+ *
+ * Incremented when changes to the serialized snapshot layout require a new
+ * storage format.
+ */
+#define QUEUE_SNAPSHOT_VERSION              1U
+
+/**
+ * @brief Byte offset of the format version field in the snapshot header.
+ *
+ * The field occupies two bytes.
+ */
+#define QUEUE_SNAPSHOT_VERSION_OFFSET       4U
+
+/**
+ * @brief Result of inspecting one snapshot slot.
+ */
+typedef enum queue_snapshot_read_status {
+    /**
+     * @brief No valid commit marker was found.
+     *
+     * Indicates that the snapshot has not been committed or that its
+     * commit marker is invalid.
+     */
+    QUEUE_SNAPSHOT_READ_UNCOMMITTED = 0,
+
+    /**
+     * @brief Snapshot data passed all validation checks.
+     *
+     * Indicates that the commit marker, header, generation, record count
+     * and CRC are valid and the snapshot was successfully decoded.
+     */
+    QUEUE_SNAPSHOT_READ_VALID,
+
+    /**
+     * @brief Snapshot contents are invalid or could not be read.
+     *
+     * Indicates a flash read error or invalid committed snapshot data,
+     * such as an incorrect magic number, unsupported version or CRC mismatch.
+     */
+    QUEUE_SNAPSHOT_READ_CORRUPT
+} queue_snapshot_read_status_t;
+
+/**
+ * @brief Decoded contents of one valid snapshot.
+ *
+ * Holds the registry entries and metadata recovered from a flash slot,
+ * represents the in-memory snapshot and is not directly written to flash.
+ */
+typedef struct queue_snapshot {
+    /**
+     * @brief Registry entries stored in FIFO order.
+     *
+     * Contains the oldest registry at index zero and the newest registry at the
+     * last occupied index.
+     */
+    registry_t records[QUEUE_CAPACITY];
+
+    /**
+     * @brief Number of valid registry entries in the snapshot.
+     */
+    queue_record_count_t record_count;
+
+    /**
+     * @brief Generation number assigned to the snapshot.
+     *
+     * Used to identify the newest committed snapshot during initialization.
+     */
+    queue_generation_t generation;
+
+    /**
+     * @brief Flash slot from which the snapshot was recovered.
+     */
+    queue_snapshot_slot_t slot;
+} queue_snapshot_t;
+
+/**
+ * @brief Aligns a value to the next multiple of a specified alignment.
+ *
+ * Returns the original value when it is already aligned. Otherwise, rounds it
+ * up to the smallest multiple of the alignment greater than the original value.
+ *
+ * @param[in] value Value to align.
+ * @param[in] alignment Required alignment.
+ *
+ * @return Aligned value.
+ */
+static flash_size_t queue_align_up(
+    flash_size_t value, flash_program_size_t alignment
+) {
+    const flash_size_t remainder = value % alignment;
+
+    if (remainder == 0U) {
+        return value;
+    }
+
+    return (value + (alignment - remainder));
+}
+
+/**
+ * @brief Calculates the CRC-32 checksum of a byte buffer.
+ *
+ * Uses the reflected CRC-32 algorithm with an initial value of 0xFFFFFFFF,
+ * polynomial 0xEDB88320 and final XOR value of 0xFFFFFFFF.
+ *
+ * @param[in] data Pointer to the input byte buffer.
+ * @param[in] size_bytes Number of bytes to process.
+ *
+ * @return Calculated CRC-32 checksum.
+ */
+static uint32_t queue_crc32(const flash_byte_t *data, flash_size_t size_bytes) {
+    uint32_t crc = 0xFFFFFFFFUL;
+
+    for (flash_size_t index = 0U; index < size_bytes; index++) {
+        crc ^= data[index];
+
+        for (uint8_t bit = 0U; bit < 8U; bit++) {
+            if ((crc & 1UL) != 0UL) {
+                crc = (crc >> 1U) ^ 0xEDB88320UL;
+            } else {
+                crc >>= 1U;
+            }
+        }
+    }
+
+    return (crc ^ 0xFFFFFFFFUL);
+}
+
+/**
+ * @brief Validates flash data by comparing it with an expected byte buffer.
+ *
+ * Reads the flash contents in chunks and compares each chunk against the
+ * corresponding expected bytes.
+ *
+ * Returns false if a flash read fails or if any byte differs.
+ *
+ * @param[in] queue Queue instance providing access to flash.
+ * @param[in] address Starting flash address.
+ * @param[in] expected Pointer to the expected byte buffer.
+ * @param[in] size_bytes Number of bytes to compare.
+ *
+ * @return true All bytes were read successfully and match the expected data.
+ */
+static bool queue_flash_data_valid(
+    const queue_t *queue,
+    flash_address_t address,
+    const flash_byte_t *expected,
+    flash_size_t size_bytes
+) {
+    flash_byte_t readback[FLASH_MAX_PROGRAM_UNIT_SIZE_BYTES];
+    flash_size_t offset = 0U;
+
+    while (offset < size_bytes) {
+        const flash_size_t remaining = size_bytes - offset;
+        const flash_size_t chunk_size = (
+            (remaining < sizeof(readback)) ? remaining : sizeof(readback)
+        );
+
+        if (
+            flash_read(
+                queue->flash,
+                address + offset,
+                readback,
+                chunk_size
+            ) != FLASH_NO_ERROR
+        ) {
+            return false;
+        }
+
+        if (memcmp(&expected[offset], readback, chunk_size) != 0) {
+            return false;
+        }
+
+        offset += chunk_size;
+    }
+
+    return true;
+}
+
+/**
+ * @brief Validates the flash geometry required by the persistent queue.
+ *
+ * Checks that the flash configuration has valid nonzero dimensions, contains an
+ * even number of erase blocks, supports two equally sized slots and provides
+ * sufficient storage for a commit block and snapshot data in each slot.
+ *
+ * @param[in] config Flash geometry configuration.
+ *
+ * @return true The flash geometry satisfies the queue storage requirements.
+ */
+static bool queue_flash_geometry_valid(const flash_config_t *config) {
+    if (
+        (config == NULL) ||
+        (config->capacity_bytes == 0U) ||
+        (config->erase_size_bytes == 0U) ||
+        (config->program_size_bytes == 0U)
+    ) {
+        return false;
+    }
+
+    const flash_size_t erase_block_count = (
+        config->capacity_bytes / config->erase_size_bytes
+    );
+
+    if ((config->capacity_bytes % config->erase_size_bytes) != 0U) {
+        return false;
+    }
+
+    if ((erase_block_count < 2U) || ((erase_block_count % 2U) != 0U)) {
+        return false;
+    }
+
+    if ((config->erase_size_bytes % config->program_size_bytes) != 0U) {
+        return false;
+    }
+
+    const flash_size_t slot_size_bytes = config->capacity_bytes / 2U;
+
+    const flash_size_t snapshot_data_size_bytes = queue_align_up(
+        QUEUE_SNAPSHOT_DATA_SIZE_BYTES,
+        config->program_size_bytes
+    );
+
+    const flash_size_t required_slot_size = (
+        config->erase_size_bytes + snapshot_data_size_bytes
+    );
+
+    return slot_size_bytes >= required_slot_size;
+}
+
+/**
+ * @brief Retrieves the starting flash address of a snapshot slot.
+ *
+ * Slot A starts at address zero. Slot B starts at the midpoint of the
+ * configured flash region.
+ *
+ * @param[in] queue Queue instance containing the flash configuration.
+ * @param[in] slot Snapshot slot identifier.
+ *
+ * @return Starting flash address of the specified slot.
+ */
+static flash_address_t queue_get_slot_address(
+    const queue_t *queue, queue_snapshot_slot_t slot
+) {
+    const flash_size_t slot_size = queue->flash_config.capacity_bytes / 2U;
+
+    if (slot == QUEUE_SNAPSHOT_SLOT_A) {
+        return 0U;
+    }
+
+    return slot_size;
+}
+
+/**
+ * @brief Determines the inactive snapshot slot.
+ *
+ * Selects Slot B when Slot A is active. Otherwise, selects Slot A.
+ * When no slot is active, Slot A is selected for the first snapshot.
+ *
+ * @param[in] queue Queue instance containing the active slot information.
+ *
+ * @return Inactive snapshot slot to be used for the next write.
+ */
+static queue_snapshot_slot_t queue_get_slot_inactive(const queue_t *queue) {
+    if (queue->active_slot == QUEUE_SNAPSHOT_SLOT_A) {
+        return QUEUE_SNAPSHOT_SLOT_B;
+    }
+
+    return QUEUE_SNAPSHOT_SLOT_A;
+}
+
+/**
+ * @brief Reads a 16-bit unsigned integer in little-endian byte order.
+ *
+ * Reconstructs the integer from two consecutive bytes, with the least
+ * significant byte stored first.
+ *
+ * @param[in] source Pointer to the source byte buffer.
+ *
+ * @return Decoded 16-bit unsigned integer.
+ */
+static uint16_t queue_read_u16_le(const flash_byte_t *source) {
+    return (
+        (uint16_t) (((uint16_t) source[0]) | (((uint16_t) source[1]) << 8U))
+    );
+}
+
+/**
+ * @brief Reads a 32-bit unsigned integer in little-endian byte order.
+ *
+ * Reconstructs the integer from four consecutive bytes, with the least
+ * significant byte stored first.
+ *
+ * @param[in] source Pointer to the source byte buffer.
+ *
+ * @return Decoded 32-bit unsigned integer.
+ */
+static uint32_t queue_read_u32_le(const flash_byte_t *source) {
+    return (
+        ((uint32_t) source[0]) |
+        ((uint32_t) source[1] <<  8U) |
+        ((uint32_t) source[2] << 16U) |
+        ((uint32_t) source[3] << 24U)
+    );
+}
+
+/**
+ * @brief Writes a 16-bit unsigned integer in little-endian byte order.
+ *
+ * Stores the least significant byte first, followed by the most significant
+ * byte.
+ *
+ * @param[out] destination Pointer to the destination byte buffer.
+ * @param[in] value 16-bit unsigned integer to serialize.
+ */
+static void queue_write_u16_le(flash_byte_t *destination, uint16_t value) {
+    destination[0] = (flash_byte_t) ( value        & 0xFFU);
+    destination[1] = (flash_byte_t) ((value >> 8U) & 0xFFU);
+}
+
+/**
+ * @brief Writes a 32-bit unsigned integer in little-endian byte order.
+ *
+ * Stores the least significant byte first, followed by the remaining bytes
+ * in increasing order of significance.
+ *
+ * @param[out] destination Pointer to the destination byte buffer.
+ * @param[in] value 32-bit unsigned integer to serialize.
+ */
+static void queue_write_u32_le(flash_byte_t *destination, uint32_t value) {
+    destination[0] = (flash_byte_t) ( value         & 0xFFUL);
+    destination[1] = (flash_byte_t) ((value >>  8U) & 0xFFUL);
+    destination[2] = (flash_byte_t) ((value >> 16U) & 0xFFUL);
+    destination[3] = (flash_byte_t) ((value >> 24U) & 0xFFUL);
+}
+
+/**
+ * @brief Deserializes a registry from its persistent byte representation.
+ *
+ * Extracts the fixed-width serial number, error code and timestamp from
+ * the source buffer and populates the destination registry.
+ *
+ * The timestamp is decoded using little-endian byte order.
+ *
+ * @param[in] source Pointer to the serialized registry.
+ * @param[out] registry Destination registry structure.
+ *
+ * @note This implementation does not validate the decoded serial number.
+ */
+static bool queue_registry_deserialize(
+    const flash_byte_t *source, registry_t *registry
+) {
+    memcpy(
+        registry->serial_number,
+        source,
+        REGISTRY_SERIAL_NUMBER_SIZE
+    );
+
+    registry->error_code = source[REGISTRY_SERIAL_NUMBER_SIZE];
+
+    registry->timestamp = queue_read_u32_le(
+        &source[REGISTRY_SERIAL_NUMBER_SIZE + 1U]
+    );
+
+    return true;
+}
+
+/**
+ * @brief Serializes a registry into its persistent byte representation.
+ *
+ * Copies the fixed-width serial number and error code into the destination
+ * buffer and encodes the timestamp using little-endian byte order.
+ *
+ * @param[out] destination Destination byte buffer.
+ * @param[in] registry Registry to serialize.
+ */
+static void queue_registry_serialize(
+    flash_byte_t *destination, const registry_t *registry
+) {
+    memcpy(
+        destination,
+        registry->serial_number,
+        REGISTRY_SERIAL_NUMBER_SIZE
+    );
+
+    destination[REGISTRY_SERIAL_NUMBER_SIZE] = registry->error_code;
+
+    queue_write_u32_le(
+        &destination[REGISTRY_SERIAL_NUMBER_SIZE + 1U],
+        registry->timestamp
+    );
+}
+
+/**
+ * @brief Reads and validates a snapshot from a flash slot.
+ *
+ * Reads the commit marker before accessing the snapshot data. If the marker
+ * is valid, reads and validates the snapshot header, generation, record count
+ * and CRC before deserializing its registry entries.
+ *
+ * The decoded snapshot is populated only when all validation checks succeed.
+ *
+ * @param[in] queue Queue instance providing access to flash and its geometry.
+ * @param[in] slot Flash slot containing the snapshot to inspect.
+ * @param[out] snapshot Destination structure for the decoded snapshot.
+ */
+static queue_snapshot_read_status_t queue_snapshot_read(
+    const queue_t *queue,
+    queue_snapshot_slot_t slot,
+    queue_snapshot_t *snapshot
+) {
+    flash_byte_t data_buffer[QUEUE_SNAPSHOT_MAX_DATA_BUFFER_SIZE_BYTES];
+    flash_byte_t commit_buffer[FLASH_MAX_PROGRAM_UNIT_SIZE_BYTES];
+
+    const flash_config_t *config = &queue->flash_config;
+
+    const flash_address_t slot_address = queue_get_slot_address(queue, slot);
+
+    const flash_size_t data_size = queue_align_up(
+        QUEUE_SNAPSHOT_DATA_SIZE_BYTES,
+        config->program_size_bytes
+    );
+
+    const flash_size_t commit_size = queue_align_up(
+        (flash_size_t) sizeof(uint32_t),
+        config->program_size_bytes
+    );
+
+    const flash_address_t data_address = (
+        slot_address + config->erase_size_bytes
+    );
+
+    if (
+        flash_read(
+            queue->flash,
+            slot_address,
+            commit_buffer,
+            commit_size
+        ) != FLASH_NO_ERROR
+    ) {
+        return QUEUE_SNAPSHOT_READ_CORRUPT;
+    }
+
+    if (queue_read_u32_le(commit_buffer) != QUEUE_SNAPSHOT_COMMIT_MARKER) {
+        return QUEUE_SNAPSHOT_READ_UNCOMMITTED;
+    }
+
+    if (
+        flash_read(
+            queue->flash,
+            data_address,
+            data_buffer,
+            data_size
+        ) != FLASH_NO_ERROR
+    ) {
+        return QUEUE_SNAPSHOT_READ_CORRUPT;
+    }
+
+    if (
+        queue_read_u32_le(
+            &data_buffer[QUEUE_SNAPSHOT_MAGIC_OFFSET]
+        ) != QUEUE_SNAPSHOT_MAGIC
+    ) {
+        return QUEUE_SNAPSHOT_READ_CORRUPT;
+    }
+
+    if (
+        queue_read_u16_le(
+            &data_buffer[QUEUE_SNAPSHOT_VERSION_OFFSET]
+        ) != QUEUE_SNAPSHOT_VERSION
+    ) {
+        return QUEUE_SNAPSHOT_READ_CORRUPT;
+    }
+
+    const queue_generation_t generation = queue_read_u32_le(
+        &data_buffer[QUEUE_SNAPSHOT_GENERATION_OFFSET]
+    );
+
+    const queue_record_count_t record_count = (
+        data_buffer[QUEUE_SNAPSHOT_COUNT_OFFSET]
+    );
+
+    if ((generation == 0U) || (record_count > QUEUE_CAPACITY)) {
+        return QUEUE_SNAPSHOT_READ_CORRUPT;
+    }
+
+    const uint32_t expected_crc = queue_read_u32_le(
+        &data_buffer[QUEUE_SNAPSHOT_CRC_OFFSET]
+    );
+    const uint32_t calculated_crc = queue_crc32(
+        data_buffer, QUEUE_SNAPSHOT_CRC_OFFSET
+    );
+
+    if (expected_crc != calculated_crc) {
+        return QUEUE_SNAPSHOT_READ_CORRUPT;
+    }
+
+    for (queue_record_count_t index = 0U; index < record_count; ++index) {
+        const flash_size_t record_offset = (
+            QUEUE_SNAPSHOT_RECORDS_OFFSET +
+            ((flash_size_t) index * QUEUE_SERIALIZED_REGISTRY_SIZE_BYTES)
+        );
+
+        if (
+            !queue_registry_deserialize(
+                &data_buffer[record_offset],
+                &snapshot->records[index]
+            )
+        ) {
+            return QUEUE_SNAPSHOT_READ_CORRUPT;
+        }
+    }
+
+    snapshot->record_count  = record_count;
+    snapshot->generation    = generation;
+    snapshot->slot          = slot;
+
+    return QUEUE_SNAPSHOT_READ_VALID;
+}
+
+/**
+ * @brief Writes and commits a new queue snapshot to the inactive flash slot.
+ *
+ * Serializes the provided registries and snapshot metadata, calculates
+ * the CRC-32 checksum and writes the resulting data to the inactive slot.
+ *
+ * The destination slot is erased before programming. After writing,
+ * the snapshot data is read back and verified. The commit marker is
+ * programmed and verified only after the snapshot data has been validated.
+ *
+ * The active snapshot slot is not modified by this operation.
+ *
+ * @param[in] queue Queue instance providing access to flash.
+ * @param[in] records Registry entries to include in the new snapshot.
+ * @param[in] record_count Number of registry entries to serialize.
+ * @param[out] written_slot Receives the slot containing the committed snapshot.
+ * @param[out] written_generation Receives the generation.
+ *
+ * @note The snapshot commit marker is programmed after the snapshot data has
+ * been written and verified. This allows initialization to distinguish
+ * committed snapshots from interrupted writes.
+ */
+static queue_error_t queue_snapshot_write(
+    const queue_t *queue,
+    const registry_t *records,
+    queue_record_count_t record_count,
+    queue_snapshot_slot_t *written_slot,
+    queue_generation_t *written_generation
+) {
+    flash_byte_t data_buffer[QUEUE_SNAPSHOT_MAX_DATA_BUFFER_SIZE_BYTES];
+    flash_byte_t commit_buffer[FLASH_MAX_PROGRAM_UNIT_SIZE_BYTES];
+
+    const flash_config_t *config = &queue->flash_config;
+
+    const flash_size_t slot_size = config->capacity_bytes / 2U;
+
+    const flash_size_t data_size = queue_align_up(
+        QUEUE_SNAPSHOT_DATA_SIZE_BYTES,
+        config->program_size_bytes
+    );
+
+    const flash_size_t commit_size = queue_align_up(
+        (flash_size_t)sizeof(uint32_t),
+        config->program_size_bytes
+    );
+
+    const queue_snapshot_slot_t target_slot = queue_get_slot_inactive(queue);
+
+    const flash_address_t slot_address = queue_get_slot_address(
+        queue, target_slot
+    );
+
+    const flash_address_t data_address = (
+        slot_address + config->erase_size_bytes
+    );
+
+    const flash_address_t commit_address = slot_address;
+
+    const queue_generation_t new_generation = queue->generation + 1U;
+
+    memset(data_buffer, 0xFF, data_size);
+
+    queue_write_u32_le(
+        &data_buffer[QUEUE_SNAPSHOT_MAGIC_OFFSET],
+        QUEUE_SNAPSHOT_MAGIC
+    );
+
+    queue_write_u16_le(
+        &data_buffer[QUEUE_SNAPSHOT_VERSION_OFFSET],
+        QUEUE_SNAPSHOT_VERSION
+    );
+
+    queue_write_u32_le(
+        &data_buffer[QUEUE_SNAPSHOT_GENERATION_OFFSET],
+        new_generation
+    );
+
+    data_buffer[QUEUE_SNAPSHOT_COUNT_OFFSET] = record_count;
+
+    for (queue_record_count_t index = 0U; index < record_count; ++index) {
+        const flash_size_t record_offset = (
+            QUEUE_SNAPSHOT_RECORDS_OFFSET +
+            ((flash_size_t) index * QUEUE_SERIALIZED_REGISTRY_SIZE_BYTES)
+        );
+
+        queue_registry_serialize(
+            &data_buffer[record_offset],
+            &records[index]
+        );
+    }
+
+    const uint32_t crc = queue_crc32(
+        data_buffer, QUEUE_SNAPSHOT_CRC_OFFSET
+    );
+
+    queue_write_u32_le(
+        &data_buffer[QUEUE_SNAPSHOT_CRC_OFFSET],
+        crc
+    );
+
+    /**
+     * The commit marker occupies the first erase block of each slot. Erasing
+     * the slot therefore invalidates its old marker before later blocks that
+     * contain snapshot data are erased. This also protects recovery if erase
+     * of the marker block itself is interrupted.
+     */
+    if (
+        flash_erase(
+            queue->flash,
+            slot_address,
+            slot_size
+        ) != FLASH_NO_ERROR
+    ) {
+        return QUEUE_ERROR_FLASH_OPERATION;
+    }
+
+    if (
+        flash_program(
+            queue->flash,
+            data_address,
+            data_buffer,
+            data_size
+        ) != FLASH_NO_ERROR
+    ) {
+        return QUEUE_ERROR_FLASH_OPERATION;
+    }
+
+    if (
+        !queue_flash_data_valid(
+            queue,
+            data_address,
+            data_buffer,
+            data_size
+        )
+    ) {
+        return QUEUE_ERROR_FLASH_OPERATION;
+    }
+
+    memset(commit_buffer, 0xFF, commit_size);
+    queue_write_u32_le(commit_buffer, QUEUE_SNAPSHOT_COMMIT_MARKER);
+
+    if (
+        flash_program(
+            queue->flash,
+            commit_address,
+            commit_buffer,
+            commit_size
+        ) != FLASH_NO_ERROR
+    ) {
+        return QUEUE_ERROR_FLASH_OPERATION;
+    }
+
+    if (
+        !queue_flash_data_valid(
+            queue,
+            commit_address,
+            commit_buffer,
+            commit_size
+        )
+    ) {
+        return QUEUE_ERROR_FLASH_OPERATION;
+    }
+
+    *written_slot = target_slot;
+    *written_generation = new_generation;
+
+    return QUEUE_NO_ERROR;
+}
+
+queue_error_t queue_ack(queue_t *queue) {
+    if (queue == NULL) {
+        return QUEUE_ERROR_INVALID_ARGUMENT;
+    }
+
+    if (!queue->initialized) {
+        return QUEUE_ERROR_NOT_INITIALIZED;
+    }
+
+    if (queue->record_count == 0U) {
+        return QUEUE_ERROR_EMPTY;
+    }
+
+    if (queue->generation == UINT32_MAX) {
+        return QUEUE_ERROR_GENERATION_EXHAUSTED;
+    }
+
+    registry_t candidate_records[QUEUE_CAPACITY];
+    memset(candidate_records, 0, sizeof(candidate_records));
+
+    const queue_record_count_t candidate_count = (
+        (queue_record_count_t) (queue->record_count - 1U)
+    );
+
+    for (queue_record_count_t index = 0U; index < candidate_count; index++) {
+        candidate_records[index] = queue->records[index + 1U];
+    }
+
+    queue_snapshot_slot_t written_slot      = QUEUE_SNAPSHOT_SLOT_NONE;
+    queue_generation_t written_generation   = 0U;
+
+    const queue_error_t persist_status = queue_snapshot_write(
+        queue,
+        candidate_records,
+        candidate_count,
+        &written_slot,
+        &written_generation
+    );
+
+    if (persist_status != QUEUE_NO_ERROR) {
+        return persist_status;
+    }
+
+    memset(queue->records, 0, sizeof(queue->records));
+    memcpy(
+        queue->records,
+        candidate_records,
+        ((size_t)candidate_count * sizeof(registry_t))
+    );
+    queue->record_count = candidate_count;
+    queue->active_slot  = written_slot;
+    queue->generation   = written_generation;
+
+    return QUEUE_NO_ERROR;
+}
+
+const char *queue_error_string(queue_error_t error) {
+    switch (error) {
+        case QUEUE_NO_ERROR:
+            return "QUEUE_NO_ERROR";
+
+        case QUEUE_ERROR_INVALID_ARGUMENT:
+            return "QUEUE_ERROR_INVALID_ARGUMENT";
+
+        case QUEUE_ERROR_NOT_INITIALIZED:
+            return "QUEUE_ERROR_NOT_INITIALIZED";
+
+        case QUEUE_ERROR_INVALID_REGISTRY:
+            return "QUEUE_ERROR_INVALID_REGISTRY";
+
+        case QUEUE_ERROR_FULL:
+            return "QUEUE_ERROR_FULL";
+
+        case QUEUE_ERROR_EMPTY:
+            return "QUEUE_ERROR_EMPTY";
+
+        case QUEUE_ERROR_FLASH_CONFIGURATION:
+            return "QUEUE_ERROR_FLASH_CONFIGURATION";
+
+        case QUEUE_ERROR_FLASH_OPERATION:
+            return "QUEUE_ERROR_FLASH_OPERATION";
+
+        case QUEUE_ERROR_STORAGE_CORRUPT:
+            return "QUEUE_ERROR_STORAGE_CORRUPT";
+
+        case QUEUE_ERROR_GENERATION_EXHAUSTED:
+            return "QUEUE_ERROR_GENERATION_EXHAUSTED";
+
+        default:
+            return "QUEUE_STATUS_UNKNOWN";
+    }
+}
+
+queue_error_t queue_init(queue_t *queue, flash_t *flash) {
+    if ((queue == NULL) || (flash == NULL)) {
+        return QUEUE_ERROR_INVALID_ARGUMENT;
+    }
+
+    memset(queue, 0, sizeof(*queue));
+
+    flash_config_t config;
+    if (flash_get_config(flash, &config) != FLASH_NO_ERROR) {
+        return QUEUE_ERROR_FLASH_CONFIGURATION;
+    }
+
+    if (!queue_flash_geometry_valid(&config)) {
+        return QUEUE_ERROR_FLASH_CONFIGURATION;
+    }
+
+    queue->flash = flash;
+    queue->flash_config = config;
+
+    queue_snapshot_t snapshot_a;
+    queue_snapshot_t snapshot_b;
+
+    const queue_snapshot_read_status_t status_a = queue_snapshot_read(
+        queue,
+        QUEUE_SNAPSHOT_SLOT_A,
+        &snapshot_a
+    );
+    const queue_snapshot_read_status_t status_b = queue_snapshot_read(
+        queue,
+        QUEUE_SNAPSHOT_SLOT_B,
+        &snapshot_b
+    );
+
+    if (
+        (status_a == QUEUE_SNAPSHOT_READ_CORRUPT) ||
+        (status_b == QUEUE_SNAPSHOT_READ_CORRUPT)
+    ) {
+        return QUEUE_ERROR_STORAGE_CORRUPT;
+    }
+
+    if (
+        (status_a == QUEUE_SNAPSHOT_READ_UNCOMMITTED) &&
+        (status_b == QUEUE_SNAPSHOT_READ_UNCOMMITTED)
+    ) {
+        queue->active_slot  = QUEUE_SNAPSHOT_SLOT_NONE;
+        queue->generation   = 0U;
+        queue->record_count = 0U;
+        queue->initialized  = true;
+
+        return QUEUE_NO_ERROR;
+    }
+
+    const queue_snapshot_t *selected_snapshot = NULL;
+
+    if (
+        (status_a == QUEUE_SNAPSHOT_READ_VALID) &&
+        (status_b == QUEUE_SNAPSHOT_READ_VALID)
+    ) {
+        if (snapshot_a.generation == snapshot_b.generation) {
+            return QUEUE_ERROR_STORAGE_CORRUPT;
+        }
+
+        selected_snapshot = (
+            (snapshot_a.generation > snapshot_b.generation)
+                ? &snapshot_a
+                : &snapshot_b
+        );
+    } else if (status_a == QUEUE_SNAPSHOT_READ_VALID) {
+        selected_snapshot = &snapshot_a;
+    } else {
+        selected_snapshot = &snapshot_b;
+    }
+
+    memcpy(
+        queue->records,
+        selected_snapshot->records,
+        ((size_t)selected_snapshot->record_count * sizeof(registry_t))
+    );
+    queue->record_count = selected_snapshot->record_count;
+    queue->generation   = selected_snapshot->generation;
+    queue->active_slot  = selected_snapshot->slot;
+    queue->initialized  = true;
+
+    return QUEUE_NO_ERROR;
+}
+
+queue_error_t queue_peek(const queue_t *queue, registry_t *registry) {
+    if ((queue == NULL) || (registry == NULL)) {
+        return QUEUE_ERROR_INVALID_ARGUMENT;
+    }
+
+    if (!queue->initialized) {
+        return QUEUE_ERROR_NOT_INITIALIZED;
+    }
+
+    if (queue->record_count == 0U) {
+        return QUEUE_ERROR_EMPTY;
+    }
+
+    *registry = queue->records[0];
+    return QUEUE_NO_ERROR;
+}
+
+queue_error_t queue_push(queue_t *queue, const registry_t *registry) {
+    if ((queue == NULL) || (registry == NULL)) {
+        return QUEUE_ERROR_INVALID_ARGUMENT;
+    }
+
+    if (!queue->initialized) {
+        return QUEUE_ERROR_NOT_INITIALIZED;
+    }
+
+    if (queue->record_count >= QUEUE_CAPACITY) {
+        return QUEUE_ERROR_FULL;
+    }
+
+    if (queue->generation == UINT32_MAX) {
+        return QUEUE_ERROR_GENERATION_EXHAUSTED;
+    }
+
+    registry_t candidate_records[QUEUE_CAPACITY];
+    memset(candidate_records, 0, sizeof(candidate_records));
+
+    memcpy(
+        candidate_records,
+        queue->records,
+        ((size_t)queue->record_count * sizeof(registry_t))
+    );
+    candidate_records[queue->record_count] = *registry;
+
+    queue_snapshot_slot_t written_slot      = QUEUE_SNAPSHOT_SLOT_NONE;
+    queue_generation_t written_generation   = 0U;
+
+    const queue_error_t persist_status = queue_snapshot_write(
+        queue,
+        candidate_records,
+        (queue_record_count_t)(queue->record_count + 1U),
+        &written_slot,
+        &written_generation
+    );
+
+    if (persist_status != QUEUE_NO_ERROR) {
+        return persist_status;
+    }
+
+    memcpy(queue->records, candidate_records, sizeof(candidate_records));
+    ++queue->record_count;
+    queue->active_slot  = written_slot;
+    queue->generation   = written_generation;
+
+    return QUEUE_NO_ERROR;
+}
