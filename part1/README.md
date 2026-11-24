@@ -71,22 +71,6 @@ It was chosen that the user should not be able to use any information if the sys
 
 Testing was created to validate the API and error messages. Nothing to clear here.
 
-### AI Usage
-
-AI helped me with the following which was accepted:
-
-- build the CMakeLists.txt file for compilation
-
-  - **how I checked**: running locally the configurations purposed
-
-- write doxygen messages
-
-  - **how I checked**: reviewing the wording
-
-- write tests
-
-  - **how I checked**: manually checked with paper
-
 ### Future Improvements
 
 With more time I would like to :
