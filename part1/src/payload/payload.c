@@ -36,13 +36,89 @@ static const char *payload_error_messages[NUMBER_OF_PAYLOAD_ERRORS] = {
         = "payload with invalid version",
 };
 
+/**
+ * @brief Reads a bit field from the payload byte array.
+ *
+ * Extracts the bits between the initial and final bit indexes inclusive and
+ * returns the resulting value, with the initial bit as the LSB.
+ *
+ * @param bytes Payload byte array.
+ * @param i_bit_start Absolute index of the first bit to read.
+ * @param i_bit_finish Absolute index of the last bit to read.
+ *
+ * @return Extracted bit field.
+ *
+ * @note Supports bit fields of up to 32 bits.
+ * @note The caller must provide valid indexes within the payload array.
+ */
+static uint32_t payload_bits_read(
+    const uint8_t bytes[PAYLOAD_SIZE_BYTES],
+    uint16_t i_bit_start,
+    uint16_t i_bit_finish
+) {
+    uint32_t value = 0;
+
+    for (uint16_t i_bit = i_bit_start; i_bit <= i_bit_finish; i_bit++) {
+        uint16_t byte_index = i_bit / 8U;
+        uint8_t bit_offset  = (uint8_t) (i_bit % 8U);
+
+        uint32_t bit_value   = (uint32_t) (
+            (bytes[byte_index] >> bit_offset) & 0x01U
+        );
+
+        value |= bit_value << (i_bit - i_bit_start);
+    }
+
+    return value;
+}
+
+/**
+ * @brief Writes a bit field into the payload byte array.
+ *
+ * Writes the bits of the provided value between the initial and final
+ * bit indexes (inclusive), with the initial bit receiving the LSB.
+ *
+ * Existing bits outside the specified range are preserved.
+ *
+ * @param bytes Payload byte array.
+ * @param i_bit_start Absolute index of the first bit to write.
+ * @param i_bit_finish Absolute index of the last bit to write.
+ * @param value Value to write.
+ *
+ * @note Supports bit fields of up to 32 bits.
+ * @note The caller must provide valid indexes within the payload array.
+ * @note Bits exceeding the specified field width are discarded.
+ */
+static void payload_bits_write(
+    uint8_t bytes[PAYLOAD_SIZE_BYTES],
+    uint16_t i_bit_start,
+    uint16_t i_bit_finish,
+    uint32_t value
+) {
+    for (uint16_t i_bit = i_bit_start; i_bit <= i_bit_finish; i_bit++) {
+        uint16_t byte_index = i_bit / 8U;
+        uint8_t bit_offset  = (uint8_t) (i_bit % 8U);
+
+        uint32_t value_bit_index    = i_bit - i_bit_start;
+        uint8_t bit_mask            = (uint8_t) (1U << bit_offset);
+
+        uint8_t bit_value = (uint8_t) (
+            (value >> value_bit_index) & 0x01U
+        );
+
+        bytes[byte_index] = (uint8_t) (
+            (bytes[byte_index] & (uint8_t) ~bit_mask) |
+            ((uint8_t) (bit_value << bit_offset))
+        );
+    }
+}
+
 static payload_error_t payload_decode_battery(
     payload_t *payload, uint8_t bytes[PAYLOAD_SIZE_BYTES]
 ) {
-    payload_battery_mv_t battery_mv = 0;
-
-    battery_mv |= (payload_battery_mv_t)((bytes[5] & 0xFC) >> 2);
-    battery_mv |= (payload_battery_mv_t)((bytes[6] & 0x3F) << 6);
+    payload_battery_mv_t battery_mv = (
+        (payload_battery_mv_t) payload_bits_read(bytes, 42U, 53U)
+    );
 
     if (battery_mv > PAYLOAD_BATTERY_MAXIMUM_MV) {
         return PAYLOAD_ERROR_BATTERY_ABOVE_MAXIMAL;
@@ -82,10 +158,9 @@ static payload_error_t payload_decode_crc8(
 static payload_error_t payload_decode_device_type(
     payload_t *payload, uint8_t bytes[PAYLOAD_SIZE_BYTES]
 ) {
-    payload_device_type_t device_type = 0;
-
-    device_type |= (payload_device_type_t) ((bytes[0] & 0xF0) >> 4);
-    device_type |= (payload_device_type_t) ((bytes[1] & 0x0F) << 4);
+    payload_device_type_t device_type = (
+        (payload_device_type_t) payload_bits_read(bytes, 4U, 11U)
+    );
 
     if (device_type != PAYLOAD_DEVICE_TYPE_1) {
         return PAYLOAD_ERROR_DEVICE_TYPE_INVALID;
@@ -100,9 +175,9 @@ static payload_error_t payload_decode_flags(
 ) {
     payload_flags_t decoded_flags = {0};
 
-    decoded_flags.battery_low   = (bool) (((bytes[1] & 0x10) >> 4) == 1);
-    decoded_flags.violation     = (bool) (((bytes[1] & 0x20) >> 5) == 1);
-    decoded_flags.flow_reversed = (bool) (((bytes[1] & 0x40) >> 6) == 1);
+    decoded_flags.battery_low       = payload_bits_read(bytes, 12U, 12U) != 0U;
+    decoded_flags.violation         = payload_bits_read(bytes, 13U, 13U) != 0U;
+    decoded_flags.flow_reversed     = payload_bits_read(bytes, 14U, 14U) != 0U;
 
     payload->flags.battery_low      = decoded_flags.battery_low;
     payload->flags.violation        = decoded_flags.violation;
@@ -130,12 +205,11 @@ static const float flow_exponents[] = {
 static payload_error_t payload_decode_flow(
     payload_t *payload, uint8_t bytes[PAYLOAD_SIZE_BYTES]
 ) {
-    uint16_t flow_config = 0;
+    uint16_t flow_config = (
+        (uint16_t) payload_bits_read(bytes, 65U, 76U)
+    );
 
-    flow_config |= (uint16_t) ((bytes[8] & 0xFE) >> 1);
-    flow_config |= (uint16_t) ((bytes[9] & 0x1F) << 7);
-
-    uint8_t mantissa = (uint8_t) (flow_config & 0x00FF);
+    uint8_t mantissa = (uint8_t) ( flow_config & 0x00FF);
     uint8_t exponent = (uint8_t) ((flow_config & 0x0F00) >> 8);
 
     if (exponent == 0x0F) {
@@ -160,13 +234,9 @@ static payload_error_t payload_decode_flow(
 static payload_error_t payload_decode_pulse_count(
     payload_t *payload, uint8_t bytes[PAYLOAD_SIZE_BYTES]
 ) {
-    payload_pulse_count_t pulse_count = 0;
-
-    pulse_count |= (payload_pulse_count_t) ((bytes[1] & 0x80) >>  7);
-    pulse_count |= (payload_pulse_count_t) ((bytes[2] & 0xFF) <<  1);
-    pulse_count |= (payload_pulse_count_t) ((bytes[3] & 0xFF) <<  9);
-    pulse_count |= (payload_pulse_count_t) ((bytes[4] & 0xFF) << 17);
-    pulse_count |= (payload_pulse_count_t) ((bytes[5] & 0x07) << 25);
+    payload_pulse_count_t pulse_count = (
+        (payload_pulse_count_t) payload_bits_read(bytes, 15U, 41U)
+    );
 
     payload->pulse_count = pulse_count;
     return PAYLOAD_NO_ERROR;
@@ -175,9 +245,9 @@ static payload_error_t payload_decode_pulse_count(
 static payload_error_t payload_decode_reserved(
     payload_t *payload, uint8_t bytes[PAYLOAD_SIZE_BYTES]
 ) {
-    payload_reserved_t reserved = 0;
-
-    reserved |= (payload_reserved_t)((bytes[10] & 0xE0) >> 5);
+    payload_reserved_t reserved = (
+        (payload_reserved_t) payload_bits_read(bytes, 85U, 87U)
+    );
 
     if (reserved != PAYLOAD_RESERVED_EXPECTED) {
         return PAYLOAD_ERROR_RESERVED_INVALID;
@@ -190,10 +260,9 @@ static payload_error_t payload_decode_reserved(
 static payload_error_t payload_decode_sequence(
     payload_t *payload, uint8_t bytes[PAYLOAD_SIZE_BYTES]
 ) {
-    payload_sequence_t sequence = 0;
-
-    sequence |= (payload_sequence_t)((bytes[9]  & 0xE0) >> 5);
-    sequence |= (payload_sequence_t)((bytes[10] & 0x1F) << 3);
+    payload_sequence_t sequence = (
+        (payload_sequence_t) payload_bits_read(bytes, 77U, 84U)
+    );
 
     payload->sequence = sequence;
     return PAYLOAD_NO_ERROR;
@@ -202,12 +271,11 @@ static payload_error_t payload_decode_sequence(
 static payload_error_t payload_decode_temperature(
     payload_t *payload, uint8_t bytes[PAYLOAD_SIZE_BYTES]
 ) {
-    payload_temperature_dc_t temperature_dc = 0;
+    payload_temperature_dc_t temperature_dc = (
+        (payload_temperature_dc_t) payload_bits_read(bytes, 54U, 63U)
+    );
 
-    temperature_dc |= (payload_temperature_dc_t)((bytes[6] & 0xC0) >> 6);
-    temperature_dc |= (payload_temperature_dc_t)((bytes[7] & 0xFF) << 2);
-
-    bool temperature_negative = (bool) ((bytes[8] & 0x01) == 1);
+    bool temperature_negative = (payload_bits_read(bytes, 64U, 64U) != 0U);
     if (temperature_negative) {
         temperature_dc -= (1 << 10);
     }
@@ -227,7 +295,9 @@ static payload_error_t payload_decode_temperature(
 static payload_error_t payload_decode_version(
     payload_t *payload, uint8_t bytes[PAYLOAD_SIZE_BYTES]
 ) {
-    payload_version_t version = (payload_version_t) (bytes[0] & 0x0F);
+    payload_version_t version = (
+        (payload_version_t) payload_bits_read(bytes, 0U, 3U)
+    );
 
     if (version != PAYLOAD_VERSION_1) {
         return PAYLOAD_ERROR_VERSION_INVALID;
@@ -250,8 +320,7 @@ static payload_error_t payload_encode_battery(
         return PAYLOAD_ERROR_BATTERY_BELOW_MINIMAL;
     }
 
-    bytes[5] |= (uint8_t) ((battery_mv & 0x003F) << 2);
-    bytes[6] |= (uint8_t) ((battery_mv >> 6) & 0x003F);
+    payload_bits_write(bytes, 42U, 53U, (uint32_t) battery_mv);
 
     return PAYLOAD_NO_ERROR;
 }
@@ -282,8 +351,7 @@ static payload_error_t payload_encode_device_type(
         return PAYLOAD_ERROR_DEVICE_TYPE_INVALID;
     }
 
-    bytes[0] |= (uint8_t) ((device_type & 0x0F) << 4);
-    bytes[1] |= (uint8_t) ((device_type >> 4) & 0x0F);
+    payload_bits_write(bytes, 4U, 11U, (uint32_t) device_type);
 
     return PAYLOAD_NO_ERROR;
 }
@@ -291,9 +359,15 @@ static payload_error_t payload_encode_device_type(
 static payload_error_t payload_encode_flags(
     payload_t payload, uint8_t bytes[PAYLOAD_SIZE_BYTES]
 ) {
-    bytes[1] |= (uint8_t) ((payload.flags.battery_low   ? 1U : 0U) << 4);
-    bytes[1] |= (uint8_t) ((payload.flags.violation     ? 1U : 0U) << 5);
-    bytes[1] |= (uint8_t) ((payload.flags.flow_reversed ? 1U : 0U) << 6);
+    payload_bits_write(
+        bytes, 12U, 12U, (uint32_t) (payload.flags.battery_low   ? 1U : 0U)
+    );
+    payload_bits_write(
+        bytes, 13U, 13U, (uint32_t) (payload.flags.violation     ? 1U : 0U)
+    );
+    payload_bits_write(
+        bytes, 14U, 14U, (uint32_t) (payload.flags.flow_reversed ? 1U : 0U)
+    );
 
     return PAYLOAD_NO_ERROR;
 }
@@ -363,8 +437,7 @@ static payload_error_t payload_encode_flow(
     flow_config |= (uint16_t) flow_mantissa;
     flow_config |= (uint16_t) (((uint16_t) flow_exponent) << 8);
 
-    bytes[8] |= (uint8_t) ((flow_config & 0x007F) << 1);
-    bytes[9] |= (uint8_t) ((flow_config >> 7) & 0x001F);
+    payload_bits_write(bytes, 65U, 76U, (uint32_t) flow_config);
 
     return PAYLOAD_NO_ERROR;
 }
@@ -374,11 +447,7 @@ static payload_error_t payload_encode_pulse_count(
 ) {
     uint32_t pulse_count = (uint32_t) payload.pulse_count;
 
-    bytes[1] |= (uint8_t) ((pulse_count & 0x00000001) << 7);
-    bytes[2] |= (uint8_t) ((pulse_count >> 1)  & 0x000000FF);
-    bytes[3] |= (uint8_t) ((pulse_count >> 9)  & 0x000000FF);
-    bytes[4] |= (uint8_t) ((pulse_count >> 17) & 0x000000FF);
-    bytes[5] |= (uint8_t) ((pulse_count >> 25) & 0x00000007);
+    payload_bits_write(bytes, 15U, 41U, (uint32_t) pulse_count);
 
     return PAYLOAD_NO_ERROR;
 }
@@ -392,7 +461,7 @@ static payload_error_t payload_encode_reserved(
         return PAYLOAD_ERROR_RESERVED_INVALID;
     }
 
-    bytes[10] |= (uint8_t) ((reserved & 0x07) << 5);
+    payload_bits_write(bytes, 85U, 87U, (uint32_t) reserved);
 
     return PAYLOAD_NO_ERROR;
 }
@@ -402,8 +471,7 @@ static payload_error_t payload_encode_sequence(
 ) {
     payload_sequence_t sequence = payload.sequence;
 
-    bytes[9]  |= (uint8_t) ((sequence & 0x07) << 5);
-    bytes[10] |= (uint8_t) ((sequence >> 3) & 0x1F);
+    payload_bits_write(bytes, 77U, 84U, (uint32_t) sequence);
 
     return PAYLOAD_NO_ERROR;
 }
@@ -428,9 +496,12 @@ static payload_error_t payload_encode_temperature(
         temperature_raw = (uint16_t) (temperature_dc);
     }
 
-    bytes[6] |= (uint8_t) ((temperature_raw & 0x0003) << 6);
-    bytes[7] |= (uint8_t) ((temperature_raw >> 2) & 0x00FF);
-    bytes[8] |= (uint8_t) ((temperature_dc < 0) ? 0x01 : 0x00);
+    payload_bits_write(
+        bytes, 54U, 63U, (uint32_t) temperature_raw
+    );
+    payload_bits_write(
+        bytes, 64U, 64U, (uint32_t) (temperature_dc < 0 ? 1U : 0U)
+    );
 
     return PAYLOAD_NO_ERROR;
 }
@@ -444,7 +515,7 @@ static payload_error_t payload_encode_version(
         return PAYLOAD_ERROR_VERSION_INVALID;
     }
 
-    bytes[0] |= (uint8_t) (version & 0x0F);
+    payload_bits_write(bytes, 0U, 3U, (uint32_t) version);
 
     return PAYLOAD_NO_ERROR;
 }
