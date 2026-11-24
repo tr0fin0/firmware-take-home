@@ -1,12 +1,5 @@
 # Part 1
 
-## Assumptions
-
-Assumptions applicable for both parts are:
-
-- commit messages: conventional commits
-- development strategy: feature branches with squashed PRs linked to issues.
-
 ## Build and Run
 
 ### Requirements
@@ -49,39 +42,54 @@ rm -rf build
 
 ## Implementation
 
-Three classes were implemented in C:
+### Assumptions
+
+It was chosen that the user should not be able to use any information if the system is not 100% sure of the accuracy to avoid incorrect values triggering an incorrect action. Therefore, both the `payload_decode()` and `payload_encode()` functions would only update their respective output pointers when all the information was within the accepted limits.
+
+**### Details**
+
+The implementation is divided into two modules with a separate module for testing:
 
 - `crc8`
-
 - `payload`
-
 - `test`
 
-C was chosen because was the language I'm most confortable at the moment. Therefore many Objected Oriented expressions should be considered withing the capabilities of C.
+The `crc8` module provides an independent implementation of the CRC-8 algorithm. The `crc8_compute()` function receives a configuration structure containing the initial value, polynomial, input and output reflection settings, and final XOR value. This separation allows the CRC implementation to be reused independently of the payload.
 
-The `crc8` "class" was separated from the `payload` implementation to split resposability and allow reusability of them independently specially with different correction characteristics.
+The `payload` module provides an abstraction of the BLE advertising payload through the `payload_t` structure. Its implementation is divided into smaller functions responsible for encoding and decoding each individual field.
 
-The `payload_t` "class" provides an object abstraction of the different BLE fields required, the `payload_decode()` and `payload_encode()` functions provide ways to respectively decode an array of bytes and encode an array of bytes from the a `payload_t` object.
+The `payload_decode()` and `payload_encode()` functions provide the public interface to respectively convert an array of bytes into a `payload_t` structure and generate an array of bytes from a `payload_t` object.
 
-Both `payload_print()` and `payload_print_error()` functions are used to inspect `payload_t` objects and their possible erros.
+The different types and error conditions are defined in `payload_types.h`, while `payload_constants.h` contains the accepted minimum and maximum values for battery voltage and temperature.
 
-As described in the `payload_types.h` file, there are 9 errors conditions and 1 error free condition. Those are used to indicate the correct behavior of the `payload_decode()` and `payload_encode()` functions. During either decoding or encoding, the functions will stop without updating their respectives outputs at the first error condition encountered to avoid providing the user with uncertain or incorrect information.
+The implementation performs the following validations:
 
-It was chosen that the user should not be able to use any information if the system is not 100\% sure of the accuracy to avoid incorrect values triggering an incorrect action.
+- Payload version and device type.
+- Battery voltage limits (1800–3600 mV).
+- Temperature limits (-400–850 deci-degrees Celsius).
+- Flow exponent validity.
+- Reserved bits (expected value: zero).
+- CRC-8 checksum integrity during decoding.
 
-Testing was created to validate the API and error messages. Nothing to clear here.
+The payload functions return an error code indicating the first validation failure encountered. This allows the caller to identify why an encoding or decoding operation was unsuccessful.
 
-### Future Improvements
+The `payload_print()` and `payload_print_error()` functions provide basic ways to inspect decoded payloads and their respective error conditions.
 
-With more time I would like to :
+The `test` module contains the test functions used to validate the implementation. The tests use the standard C `assert()` mechanism and cover successful encoding and decoding, invalid field values, CRC verification, and all possible combinations of the three status flags.
 
-- create a function that given a buffer, the starting and ending absolute bits returned the value extracted from the buffer entries
+The reference payload provided in the exercise is also used to verify the decoding and encoding process.
 
-  - **why**: make code easier to change when protocol change
+#### Future Improvements
 
-- verify in depth the flow encoding precision by trying different methods
+With more time I would like to:
 
-  - **why**: ensure better correlation of data
+- Improve the test coverage for flow encoding and decoding, especially around exponent transitions and rounding.
+
+  - **Why:** Ensure the custom floating-point representation behaves correctly across its entire valid range.
+
+- Introduce a more structured test framework.
+
+  - **Why:** Improve test organization, reporting, and integration with automated testing.
 
 ### Tasks
 
@@ -91,8 +99,3 @@ With more time I would like to :
 - define treatment for values outside limits
 - define treatment for reserved bits
 - run tests
-
-
-## Sources
-
-[CRC](https://en.wikipedia.org/wiki/Cyclic_redundancy_check)
