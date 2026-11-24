@@ -86,12 +86,6 @@ This guarantees logical queue consistency; it does not guarantee that every byte
 
 The host test suite contains 18 test cases. It covers registry validation, flash configuration and operation errors, failure injection, FIFO ordering, reboot recovery, queue-full behavior, interrupted push and ack operations, commit-marker interruption, CRC validation and status-string mappings. Failure tests check both the RAM state and the state recovered after reinitialization with the same backing flash bytes.
 
-### AI Usage
-
-AI tools were used to discuss architectural decisions, generate and refactor C code, improve Doxygen documentation, and assist with test development.
-
-Generated code and suggestions were reviewed and adapted. The implementation was compiled and tested using GCC.
-
 ### Future Improvements
 
 With more time I would like to :
