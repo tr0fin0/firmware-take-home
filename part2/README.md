@@ -115,7 +115,3 @@ With more time I would like to :
 - implement `push`
   - if fail, return error and nothing changes in the flash
 - run tests
-
-## Sources
-
-JIG
