@@ -75,7 +75,7 @@ void test_queue_failed_push_during_commit(void);
 /**
  * @brief Tests initialization with insufficient flash capacity.
  *
- * Verifies that the queue reports an error when the configured flashe storage
+ * Verifies that the queue reports an error when the configured flash storage
  * cannot accommodate its required snapshots.
  */
 void test_queue_flash_insufficient(void);
