@@ -14,7 +14,7 @@ All generated suggestions were reviewed before being incorporated into the proje
 
 - **what:** create the `crc8_compute()` function from the `crc8_config` structure.
 - **how I checked:** compared the results with an online calculator.
-- **why:** I had limited experience designing CRC algorithm and wanted to evaluate ensure correct implementation.
+- **why:** I had limited experience designing CRC algorithm and wanted to ensure correct implementation.
 
 ### Doxygen documentation
 
