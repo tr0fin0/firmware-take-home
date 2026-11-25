@@ -46,7 +46,7 @@ rm -rf build
 
 It was chosen that the user should not be able to use any information if the system is not 100% sure of the accuracy to avoid incorrect values triggering an incorrect action. Therefore, both the `payload_decode()` and `payload_encode()` functions would only update their respective output pointers when all the information was within the accepted limits.
 
-**### Details**
+### Details
 
 The implementation is divided into two modules with a separate module for testing:
 
