@@ -44,9 +44,9 @@ rm -rf build
 
 ### Assumptions
 
-It was chosen that the user should not be able to use any information if the system is not 100% sure of the accuracy to avoid incorrect values triggering an incorrect action. Therefore, both the `payload_decode()` and `payload_encode()` functions would only update their respective output pointers when all the information was within the accepted limits.
+It was chosen that the user should not be able to use any information if the system is not 100% sure of it's accuracy to avoid incorrect values triggering an incorrect action. Therefore, both the `payload_decode()` and `payload_encode()` functions would only update their respective output pointers when all the information was within the accepted limits which happens when they return `PAYLOAD_NO_ERROR`.
 
-**### Details**
+### Details
 
 The implementation is divided into two modules with a separate module for testing:
 
@@ -60,18 +60,29 @@ The `payload` module provides an abstraction of the BLE advertising payload thro
 
 The `payload_decode()` and `payload_encode()` functions provide the public interface to respectively convert an array of bytes into a `payload_t` structure and generate an array of bytes from a `payload_t` object.
 
-The different types and error conditions are defined in `payload_types.h`, while `payload_constants.h` contains the accepted minimum and maximum values for battery voltage and temperature.
+The different types and error conditions are defined in `payload_types.h`, while `payload_constants.h` contains the accepted minimum and maximum values for battery voltage and temperature, and the expected reserved value.
 
 The implementation performs the following validations:
 
 - Payload version and device type.
-- Battery voltage limits (1800–3600 mV).
-- Temperature limits (-400–850 deci-degrees Celsius).
+- Battery voltage limits between 1800 and 3600 mili-Volts.
+- Temperature limits between -400 and +850 deci-degrees Celsius.
 - Flow exponent validity.
-- Reserved bits (expected value: zero).
+- Reserved bits expected to zero.
 - CRC-8 checksum integrity during decoding.
 
-The payload functions return an error code indicating the first validation failure encountered. This allows the caller to identify why an encoding or decoding operation was unsuccessful.
+The payload functions return an error code `payload_error_t` indicating the first validation failure encountered. This allows the caller to identify why an encoding or decoding operation was unsuccessful including the following:
+
+- `PAYLOAD_NO_ERROR`
+- `PAYLOAD_ERROR_BATTERY_ABOVE_MAXIMAL`
+- `PAYLOAD_ERROR_BATTERY_BELOW_MINIMAL`
+- `PAYLOAD_ERROR_CRC8_CHECK_FAIL`
+- `PAYLOAD_ERROR_DEVICE_TYPE_INVALID`
+- `PAYLOAD_ERROR_FLOW_EXPONENT_INVALID`
+- `PAYLOAD_ERROR_RESERVED_INVALID`
+- `PAYLOAD_ERROR_TEMPERATURE_ABOVE_MAXIMAL`
+- `PAYLOAD_ERROR_TEMPERATURE_BELOW_MINIMAL`
+- `PAYLOAD_ERROR_VERSION_INVALID`
 
 The `payload_print()` and `payload_print_error()` functions provide basic ways to inspect decoded payloads and their respective error conditions.
 

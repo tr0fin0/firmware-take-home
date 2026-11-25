@@ -14,7 +14,7 @@ All generated suggestions were reviewed before being incorporated into the proje
 
 - **what:** create the `crc8_compute()` function from the `crc8_config` structure.
 - **how I checked:** compared the results with an online calculator.
-- **why:** I had limited experience designing CRC algorithm and wanted to evaluate ensure correct implementation.
+- **why:** I had limited experience designing CRC algorithm and wanted to ensure correct implementation.
 
 ### Doxygen documentation
 
@@ -25,5 +25,5 @@ All generated suggestions were reviewed before being incorporated into the proje
 ### Test development
 
 - **what:** propose unit test cases covering normal operation, boundary conditions, and invalid inputs.
-- **how I checked:** manually derived and checked the expected values against the payload specification, bit positions, and mathematical formulas.
+- **how I checked:** manually derived and checked the expected values against the payload specification.
 - **why:** to improve test coverage, particularly for error conditions.

@@ -207,10 +207,10 @@ flash_error_t flash_init(
         return FLASH_ERROR_INVALID_CONFIGURATION;
     }
 
-    flash->config = *config;
-    flash->storage = storage;
-    flash->storage_size_bytes = storage_size_bytes;
-    flash->initialized = true;
+    flash->config               = *config;
+    flash->storage              = storage;
+    flash->storage_size_bytes   = storage_size_bytes;
+    flash->initialized          = true;
 
     return FLASH_NO_ERROR;
 }

@@ -796,7 +796,7 @@ queue_error_t queue_ack(queue_t *queue) {
     memcpy(
         queue->records,
         candidate_records,
-        ((size_t)candidate_count * sizeof(registry_t))
+        ((size_t) candidate_count * sizeof(registry_t))
     );
     queue->record_count = candidate_count;
     queue->active_slot  = written_slot;
@@ -918,7 +918,7 @@ queue_error_t queue_init(queue_t *queue, flash_t *flash) {
     memcpy(
         queue->records,
         selected_snapshot->records,
-        ((size_t)selected_snapshot->record_count * sizeof(registry_t))
+        ((size_t) selected_snapshot->record_count * sizeof(registry_t))
     );
     queue->record_count = selected_snapshot->record_count;
     queue->generation   = selected_snapshot->generation;
@@ -968,7 +968,7 @@ queue_error_t queue_push(queue_t *queue, const registry_t *registry) {
     memcpy(
         candidate_records,
         queue->records,
-        ((size_t)queue->record_count * sizeof(registry_t))
+        ((size_t) queue->record_count * sizeof(registry_t))
     );
     candidate_records[queue->record_count] = *registry;
 
@@ -978,7 +978,7 @@ queue_error_t queue_push(queue_t *queue, const registry_t *registry) {
     const queue_error_t persist_status = queue_snapshot_write(
         queue,
         candidate_records,
-        (queue_record_count_t)(queue->record_count + 1U),
+        (queue_record_count_t) (queue->record_count + 1U),
         &written_slot,
         &written_generation
     );

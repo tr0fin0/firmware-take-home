@@ -44,9 +44,9 @@ rm -rf build
 
 ### Assumptions
 
-Registry would contain exactly 12 bytes with 12 ASCII alphanumeric characters: `0-9`, `A-Z`, and `a-z`, stored as a fixed-width array without a null terminator for the serial number.
+Registry would contain exactly 12 bytes each one with an ASCII alphanumeric characters: `0-9`, `A-Z`, and `a-z`, stored as a fixed-width array without a null terminator for the serial number.
 
-Registry would contain exactly 1 byte with an error code where `0x00` represents a successful test and `0x01 - 0xFF` are reserved for application-specific failure codes.
+Registry would contain exactly 1 byte with an error code where `REGISTRY_NO_ERROR = 0x00` represents a successful test and `0x01 - 0xFF` are reserved for application-specific failure codes.
 
 Registry would contain exactly 4 bytes to store the timestamp of the creation of the registry as `uint32_t`.
 
@@ -56,7 +56,7 @@ Queue stores up to 32 registries. When full, `queue_push()` rejects a new regist
 
 The implementation is divided into three modules:
 
-- `flash`: provides a configurable RAM-backed fake flash. Its configuration defines capacity, erase-block size and programming-unit size. It models erased bytes (0xFF), programming from 1 to 0, erase-block operations and injectable partial program/erase failures. The backing byte array is caller-owned so it can be retained when the flash and queue handles are recreated to simulate a reboot.
+- `flash`: provides a configurable RAM-backed fake flash. Its configuration defines capacity, erase-block size and programming-unit size. It models erased bytes with `0xFF`, programming from 1 to 0, erase-block operations and injectable partial program/erase failures. The backing byte array is caller-owned so it can be retained when the flash and queue handles are recreated to simulate a reboot.
 
 - `registry`: defines a production test result. Each registry is serialized explicitly into 17 bytes: 12 serial-number bytes, one error-code byte and four little-endian timestamp bytes. The implementation does not write `sizeof(registry_t)` to flash.
 
@@ -78,7 +78,21 @@ This guarantees logical queue consistency; it does not guarantee that every byte
 
 #### Tests
 
-The host test suite contains 18 test cases. It covers registry validation, flash configuration and operation errors, failure injection, FIFO ordering, reboot recovery, queue-full behavior, interrupted push and ack operations, commit-marker interruption, CRC validation and status-string mappings. Failure tests check both the RAM state and the state recovered after reinitialization with the same backing flash bytes.
+The host test suite contains 13 test cases. It covers registry validation, flash configuration and operation errors, failure injection, FIFO ordering, reboot recovery, queue-full behavior, interrupted push and ack operations, commit-marker interruption, CRC validation and status-string mappings. Failure tests check both the RAM state and the state recovered after reinitialization with the same backing flash bytes.
+
+- `test_flash_failure_injection(void)`
+- `test_flash_initialization_errors(void)`
+- `test_queue_failed_ack_during_erase(void)`
+- `test_queue_failed_ack_during_program(void)`
+- `test_queue_failed_push_during_erase(void)`
+- `test_queue_failed_push_during_program(void)`
+- `test_queue_failed_push_before_commit(void)`
+- `test_queue_failed_push_during_commit(void)`
+- `test_queue_flash_insufficient(void)`
+- `test_queue_full_error(void)`
+- `test_queue_initialization_empty(void)`
+- `test_queue_initialization_errors(void)`
+- `test_queue_persistence(void)`
 
 ### Future Improvements
 
