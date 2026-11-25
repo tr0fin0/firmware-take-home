@@ -60,15 +60,15 @@ The `payload` module provides an abstraction of the BLE advertising payload thro
 
 The `payload_decode()` and `payload_encode()` functions provide the public interface to respectively convert an array of bytes into a `payload_t` structure and generate an array of bytes from a `payload_t` object.
 
-The different types and error conditions are defined in `payload_types.h`, while `payload_constants.h` contains the accepted minimum and maximum values for battery voltage and temperature.
+The different types and error conditions are defined in `payload_types.h`, while `payload_constants.h` contains the accepted minimum and maximum values for battery voltage and temperature, and the expected reserved value.
 
 The implementation performs the following validations:
 
 - Payload version and device type.
-- Battery voltage limits (1800–3600 mV).
-- Temperature limits (-400–850 deci-degrees Celsius).
+- Battery voltage limits between 1800 and 3600 mili-Volts.
+- Temperature limits between -400 and +850 deci-degrees Celsius.
 - Flow exponent validity.
-- Reserved bits (expected value: zero).
+- Reserved bits expected to zero.
 - CRC-8 checksum integrity during decoding.
 
 The payload functions return an error code indicating the first validation failure encountered. This allows the caller to identify why an encoding or decoding operation was unsuccessful.
